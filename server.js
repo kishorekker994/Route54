@@ -85,21 +85,36 @@ initDB();
 // API ROUTES
 app.get('/api/menu', async (req, res) => {
   if (!process.env.DATABASE_URL) return res.json([]);
-  const result = await pool.query('SELECT * FROM menu');
-  res.json(result.rows);
+  try {
+    const result = await pool.query('SELECT * FROM menu');
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching menu:", err);
+    res.status(500).json([]);
+  }
 });
 
 app.get('/api/orders', async (req, res) => {
   if (!process.env.DATABASE_URL) return res.json([]);
-  const result = await pool.query('SELECT * FROM orders ORDER BY timestamp DESC');
-  res.json(result.rows);
+  try {
+    const result = await pool.query('SELECT * FROM orders ORDER BY timestamp DESC');
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching orders:", err);
+    res.status(500).json([]);
+  }
 });
 
 app.get('/api/settings', async (req, res) => {
   if (!process.env.DATABASE_URL) return res.json({});
-  const result = await pool.query("SELECT * FROM settings WHERE key = 'app_settings'");
-  if (result.rows.length > 0) return res.json(result.rows[0].value);
-  res.json({});
+  try {
+    const result = await pool.query("SELECT * FROM settings WHERE key = 'app_settings'");
+    if (result.rows.length > 0) return res.json(result.rows[0].value);
+    res.json({});
+  } catch (err) {
+    console.error("Error fetching settings:", err);
+    res.status(500).json({});
+  }
 });
 
 // WEBSOCKETS (Real-time sync)
@@ -124,34 +139,42 @@ io.on('connection', (socket) => {
 
   socket.on('update_order_status', async ({ orderId, status }) => {
     if (process.env.DATABASE_URL) {
-      await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+      try {
+        await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+      } catch (err) { console.error("Error updating order:", err); }
     }
     io.emit('order_updated', { orderId, status });
   });
 
   socket.on('update_menu_item', async (item) => {
     if (process.env.DATABASE_URL) {
-      await pool.query(
-        'UPDATE menu SET available = $1 WHERE id = $2',
-        [item.available, item.id]
-      );
+      try {
+        await pool.query(
+          'UPDATE menu SET available = $1 WHERE id = $2',
+          [item.available, item.id]
+        );
+      } catch (err) { console.error("Error updating menu item:", err); }
     }
     io.emit('menu_updated', item);
   });
 
   socket.on('add_menu_item', async (item) => {
     if (process.env.DATABASE_URL) {
-      await pool.query(
-        'INSERT INTO menu (id, name, emoji, price, category, available) VALUES ($1, $2, $3, $4, $5, $6)',
-        [item.id, item.name, item.emoji, item.price, item.category, item.available]
-      );
+      try {
+        await pool.query(
+          'INSERT INTO menu (id, name, emoji, price, category, available) VALUES ($1, $2, $3, $4, $5, $6)',
+          [item.id, item.name, item.emoji, item.price, item.category, item.available]
+        );
+      } catch (err) { console.error("Error adding menu item:", err); }
     }
     io.emit('menu_added', item);
   });
   
   socket.on('delete_menu_item', async (itemId) => {
     if (process.env.DATABASE_URL) {
-      await pool.query('DELETE FROM menu WHERE id = $1', [itemId]);
+      try {
+        await pool.query('DELETE FROM menu WHERE id = $1', [itemId]);
+      } catch (err) { console.error("Error deleting menu item:", err); }
     }
     io.emit('menu_deleted', itemId);
   });
@@ -159,6 +182,11 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Client disconnected');
   });
+});
+
+// Catch-all route to serve index.html for SPA routing and prevent 404s
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 const PORT = process.env.PORT || 5400;
