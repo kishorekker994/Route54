@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Route54 – Admin Panel</title>
+  <meta name="description" content="Route54 Food Truck admin panel for managing orders, menu and reports." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Hanken+Grotesk:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="admin-page">
+
+  <div class="bg-texture" aria-hidden="true"></div>
+  <div class="bg-glow bg-glow--orange" aria-hidden="true"></div>
+
+  <!-- ADMIN LOGIN -->
+  <div class="admin-login-overlay" id="adminLoginOverlay">
+    <div class="glass-card admin-login-box">
+      <div class="logo-wrap logo-wrap--center">
+        <div class="logo-r">
+          <span class="logo-r__letter">R</span>
+          <div class="logo-r__glow"></div>
+        </div>
+        <div class="logo-text">
+          <span class="logo-brand">ROUTE<span class="neon-54">54</span></span>
+          <span class="logo-tagline">ADMIN PANEL</span>
+        </div>
+      </div>
+      <label class="field-label" for="adminPass">ADMIN PASSWORD</label>
+      <input type="password" id="adminPass" class="neon-input" placeholder="Enter password..." autocomplete="current-password" />
+      <button class="btn-primary btn-full" onclick="adminLogin()">
+        <span>LOGIN</span>
+        <span class="btn-arrow">🔑</span>
+      </button>
+      <p class="admin-login-hint">Default password: <code>route54admin</code></p>
+      <a href="index.html" class="back-customer-link">← Back to Customer Page</a>
+    </div>
+  </div>
+
+  <!-- ADMIN DASHBOARD -->
+  <div class="admin-dashboard hidden" id="adminDashboard">
+
+    <!-- Admin Header -->
+    <header class="admin-header">
+      <div class="header-inner">
+        <div class="logo-wrap" onclick="window.location.href='index.html'" role="link" tabindex="0" aria-label="Route54 Home">
+          <div class="logo-r logo-r--sm">
+            <span class="logo-r__letter">R</span>
+          </div>
+          <div class="logo-text">
+            <span class="logo-brand logo-brand--sm">ROUTE<span class="neon-54">54</span></span>
+            <span class="logo-tagline">ADMIN</span>
+          </div>
+        </div>
+        <div class="admin-header-actions">
+          <div class="live-clock" id="liveClock"></div>
+          <button class="btn-secondary btn-sm" onclick="adminLogout()">LOGOUT</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Admin Nav -->
+    <nav class="admin-nav" role="navigation" aria-label="Admin sections">
+      <button class="admin-nav-btn active" id="navOrders" onclick="showAdminSection('orders')" aria-pressed="true">
+        📋 <span>ORDERS</span>
+        <span class="nav-badge" id="pendingBadge">0</span>
+      </button>
+      <button class="admin-nav-btn" id="navMenu" onclick="showAdminSection('menu')" aria-pressed="false">
+        🍽️ <span>MENU</span>
+      </button>
+      <button class="admin-nav-btn" id="navReports" onclick="showAdminSection('reports')" aria-pressed="false">
+        📊 <span>REPORTS</span>
+      </button>
+      <button class="admin-nav-btn" id="navSettings" onclick="showAdminSection('settings')" aria-pressed="false">
+        ⚙️ <span>SETTINGS</span>
+      </button>
+    </nav>
+
+    <!-- ===== ORDERS SECTION ===== -->
+    <section class="admin-section" id="sectionOrders" aria-labelledby="ordersHeading">
+      <!-- Stats Row -->
+      <div class="stats-row">
+        <div class="stat-card glass-card">
+          <span class="stat-icon">⏳</span>
+          <div class="stat-info">
+            <span class="stat-num neon-text" id="statPending">0</span>
+            <span class="stat-lbl">PENDING</span>
+          </div>
+        </div>
+        <div class="stat-card glass-card">
+          <span class="stat-icon">✅</span>
+          <div class="stat-info">
+            <span class="stat-num neon-green" id="statDone">0</span>
+            <span class="stat-lbl">COMPLETED</span>
+          </div>
+        </div>
+        <div class="stat-card glass-card">
+          <span class="stat-icon">💰</span>
+          <div class="stat-info">
+            <span class="stat-num neon-text" id="statRevenue">₹0</span>
+            <span class="stat-lbl">TODAY'S REVENUE</span>
+          </div>
+        </div>
+        <div class="stat-card glass-card">
+          <span class="stat-icon">⏱️</span>
+          <div class="stat-info">
+            <span class="stat-num neon-text" id="statWait">~0 min</span>
+            <span class="stat-lbl">AVG WAIT</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Orders -->
+      <h2 id="ordersHeading" class="section-title">
+        <span class="neon-text">ACTIVE ORDERS</span>
+        <span class="section-badge" id="activeOrderCount">0</span>
+      </h2>
+      <div class="orders-list" id="activeOrdersList" aria-live="polite">
+        <div class="empty-state">
+          <span class="empty-icon">🕐</span>
+          <p>No active orders yet.</p>
+        </div>
+      </div>
+
+      <!-- Closed Orders -->
+      <h2 class="section-title" style="margin-top:2.5rem;">
+        <span class="neon-red">CLOSED ORDERS</span>
+      </h2>
+      <div class="orders-list" id="closedOrdersList" aria-live="polite">
+        <div class="empty-state">
+          <span class="empty-icon">📦</span>
+          <p>No closed orders yet.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== MENU SECTION ===== -->
+    <section class="admin-section hidden" id="sectionMenu" aria-labelledby="menuHeading">
+      <h2 id="menuHeading" class="section-title"><span class="neon-text">MANAGE MENU</span></h2>
+
+      <!-- Add Item Form -->
+      <div class="glass-card add-item-card">
+        <h3 class="card-subhead">ADD NEW ITEM</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="field-label" for="newItemName">ITEM NAME</label>
+            <input type="text" id="newItemName" class="neon-input" placeholder="e.g. Paneer Burger" />
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="newItemPrice">PRICE (₹)</label>
+            <input type="number" id="newItemPrice" class="neon-input" placeholder="e.g. 120" min="1" />
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="newItemEmoji">EMOJI</label>
+            <input type="text" id="newItemEmoji" class="neon-input" placeholder="e.g. 🍔" maxlength="4" />
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="newItemCategory">CATEGORY</label>
+            <select id="newItemCategory" class="neon-input neon-select">
+              <option value="veg">VEG</option>
+              <option value="nonveg">NON-VEG</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="addMenuItem()">+ ADD TO MENU</button>
+      </div>
+
+      <!-- VEG Items -->
+      <h3 class="subsection-title">
+        <span class="tab-dot tab-dot--veg"></span> VEG ITEMS
+      </h3>
+      <div class="menu-admin-list" id="adminMenuVeg"></div>
+
+      <!-- NON-VEG Items -->
+      <h3 class="subsection-title" style="margin-top:2rem;">
+        <span class="tab-dot tab-dot--nonveg"></span> NON-VEG ITEMS
+      </h3>
+      <div class="menu-admin-list" id="adminMenuNonveg"></div>
+    </section>
+
+    <!-- ===== REPORTS SECTION ===== -->
+    <section class="admin-section hidden" id="sectionReports" aria-labelledby="reportsHeading">
+      <h2 id="reportsHeading" class="section-title"><span class="neon-text">SALES REPORT</span></h2>
+
+      <!-- Date Filter -->
+      <div class="glass-card report-filter-card">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="field-label" for="reportDate">REPORT DATE</label>
+            <input type="date" id="reportDate" class="neon-input" />
+          </div>
+          <div class="form-group form-group--actions">
+            <button class="btn-primary" onclick="generateReport()">GENERATE REPORT</button>
+            <button class="btn-secondary" onclick="downloadReport()">⬇ DOWNLOAD CSV</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report Summary -->
+      <div class="report-summary" id="reportSummary">
+        <div class="stats-row">
+          <div class="stat-card glass-card">
+            <span class="stat-icon">📋</span>
+            <div class="stat-info">
+              <span class="stat-num neon-text" id="rTotalOrders">–</span>
+              <span class="stat-lbl">TOTAL ORDERS</span>
+            </div>
+          </div>
+          <div class="stat-card glass-card">
+            <span class="stat-icon">💰</span>
+            <div class="stat-info">
+              <span class="stat-num neon-text" id="rRevenue">₹–</span>
+              <span class="stat-lbl">REVENUE</span>
+            </div>
+          </div>
+          <div class="stat-card glass-card">
+            <span class="stat-icon">🥗</span>
+            <div class="stat-info">
+              <span class="stat-num neon-green" id="rVegOrders">–</span>
+              <span class="stat-lbl">VEG ORDERS</span>
+            </div>
+          </div>
+          <div class="stat-card glass-card">
+            <span class="stat-icon">🍗</span>
+            <div class="stat-info">
+              <span class="stat-num neon-red" id="rNonvegOrders">–</span>
+              <span class="stat-lbl">NON-VEG ORDERS</span>
+            </div>
+          </div>
+        </div>
+        <div class="glass-card top-items-card">
+          <h3 class="card-subhead">TOP SELLING ITEMS</h3>
+          <div class="top-items-list" id="topItemsList">
+            <p class="empty-hint">Generate report to see data</p>
+          </div>
+        </div>
+        <div class="glass-card">
+          <h3 class="card-subhead">ORDER BREAKDOWN</h3>
+          <div class="report-orders-list" id="reportOrdersList">
+            <p class="empty-hint">Generate report to see data</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SETTINGS SECTION ===== -->
+    <section class="admin-section hidden" id="sectionSettings" aria-labelledby="settingsHeading">
+      <h2 id="settingsHeading" class="section-title"><span class="neon-text">SETTINGS</span></h2>
+
+      <!-- QR Code Upload -->
+      <div class="glass-card settings-card">
+        <h3 class="card-subhead">UPI QR CODE</h3>
+        <p class="settings-desc">Upload your UPI QR code image. Customers will see this when they choose UPI payment.</p>
+        <div class="qr-preview-wrap">
+          <div class="qr-preview-frame" id="qrPreviewFrame">
+            <img id="qrPreviewImg" src="" alt="QR Code Preview" class="qr-preview-img hidden" />
+            <div id="qrPreviewPlaceholder" class="qr-preview-placeholder">
+              <span>📱</span>
+              <p>No QR uploaded yet</p>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="qrFile">SELECT QR IMAGE</label>
+          <input type="file" id="qrFile" accept="image/*" class="file-input" onchange="previewQR(event)" />
+          <label for="qrFile" class="file-label btn-secondary">📁 CHOOSE IMAGE</label>
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="qrPassword">QR CHANGE PASSWORD</label>
+          <input type="password" id="qrPassword" class="neon-input" placeholder="Enter QR change password..." />
+        </div>
+        <button class="btn-primary" onclick="saveQRCode()">SAVE QR CODE</button>
+      </div>
+
+      <!-- Change Password -->
+      <div class="glass-card settings-card">
+        <h3 class="card-subhead">CHANGE ADMIN PASSWORD</h3>
+        <div class="form-group">
+          <label class="field-label" for="oldPassword">CURRENT PASSWORD</label>
+          <input type="password" id="oldPassword" class="neon-input" placeholder="Current password..." />
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="newPassword">NEW PASSWORD</label>
+          <input type="password" id="newPassword" class="neon-input" placeholder="New password..." />
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="confirmPassword">CONFIRM NEW PASSWORD</label>
+          <input type="password" id="confirmPassword" class="neon-input" placeholder="Confirm new password..." />
+        </div>
+        <button class="btn-primary" onclick="changePassword()">UPDATE PASSWORD</button>
+      </div>
+
+      <!-- UPI ID -->
+      <div class="glass-card settings-card">
+        <h3 class="card-subhead">TRUCK SETTINGS</h3>
+        <div class="form-group">
+          <label class="field-label" for="truckName">TRUCK NAME</label>
+          <input type="text" id="truckName" class="neon-input" placeholder="Route54" />
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="upiId">UPI ID</label>
+          <input type="text" id="upiId" class="neon-input" placeholder="yourname@upi" />
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="avgPrepTime">AVG PREP TIME PER ORDER (min)</label>
+          <input type="number" id="avgPrepTime" class="neon-input" value="5" min="1" max="60" />
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="qrChangePass">QR CHANGE PASSWORD</label>
+          <input type="password" id="qrChangePass" class="neon-input" placeholder="Set a password for QR changes..." />
+        </div>
+        <button class="btn-primary" onclick="saveTruckSettings()">SAVE SETTINGS</button>
+      </div>
+    </section>
+
+  </div><!-- /admin-dashboard -->
+
+  <!-- TOAST NOTIFICATION -->
+  <div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+  <script src="data.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

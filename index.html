@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0d0d0d" />
+  <title>Route 54 Bistro – Order Now</title>
+  <meta name="description" content="Order from Route 54 Bistro Food Truck. Burgers, wraps, fries and more. Pay with Cash or UPI." />
+  <link rel="icon" type="image/png" href="logo-bold.png" />
+  <link rel="apple-touch-icon" href="logo-bold.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="customer-page">
+
+  <div class="bg-texture" aria-hidden="true"></div>
+  <div class="bg-glow bg-glow--orange" aria-hidden="true"></div>
+  <div class="bg-glow bg-glow--red" aria-hidden="true"></div>
+
+  <!-- ============================================================
+       VIEW: LANDING (no-scroll, fits 100dvh)
+       ============================================================ -->
+  <div class="view view--landing active" id="viewLanding">
+
+    <!-- Header -->
+    <header class="app-header" role="banner">
+      <div class="app-header__inner">
+        <!-- Logo: tap 7 times to access staff mode -->
+        <div class="logo-badge" id="logoTapTarget" onclick="handleLogoTap()" role="button" tabindex="0" aria-label="Route 54 Bistro">
+          <img src="logo-bold.png" alt="R54 Logo" class="logo-img" />
+        </div>
+        <div class="brand-name-wrap">
+          <span class="brand-name">ROUTE <span class="brand-54">54</span></span>
+          <span class="brand-sub">BISTRO</span>
+        </div>
+        <div class="header-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-txt">OPEN</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero Image (the user's neon sign) -->
+    <div class="hero-section" role="img" aria-label="Route 54 Bistro Neon Sign">
+      <img src="hero-bg.png" alt="Route 54 neon sign" class="hero-img" />
+      <div class="hero-overlay" aria-hidden="true"></div>
+      <p class="hero-tagline">STREET FOOD THAT HITS DIFFERENT 🔥</p>
+    </div>
+
+    <!-- Name Entry Card -->
+    <div class="landing-card">
+      <label class="field-label" for="customerName">YOUR NAME</label>
+      <input
+        type="text"
+        id="customerName"
+        class="neon-input landing-input"
+        placeholder="Type your name..."
+        autocomplete="given-name"
+        aria-required="true"
+        maxlength="50"
+      />
+      <button class="btn-primary btn-full btn-xl" id="btnStartOrder" onclick="startOrder()">
+        START ORDERING →
+      </button>
+    </div>
+
+    <!-- Staff Access (hidden in plain sight at bottom) -->
+    <div class="landing-footer">
+      <span class="staff-hint" id="staffTapHint"></span>
+      <button class="staff-link" onclick="openStaffModal()" aria-label="Staff access">STAFF ACCESS</button>
+    </div>
+
+  </div><!-- /view--landing -->
+
+
+  <!-- ============================================================
+       VIEW: MENU
+       ============================================================ -->
+  <div class="view view--menu" id="viewMenu">
+
+    <!-- Header -->
+    <header class="app-header" role="banner">
+      <div class="app-header__inner">
+        <div class="logo-badge logo-badge--sm">
+          <img src="logo-bold.png" alt="R54" class="logo-img" />
+        </div>
+        <div class="brand-name-wrap">
+          <span class="brand-name brand-name--sm">ROUTE <span class="brand-54">54</span> <span class="brand-bistro-inline">BISTRO</span></span>
+        </div>
+        <div class="greeting-chip">
+          Hey <strong id="greetName"></strong>! 👋
+        </div>
+      </div>
+    </header>
+
+    <!-- Category Tabs -->
+    <div class="cat-tabs" role="tablist">
+      <button class="cat-tab cat-tab--veg active" id="tabVeg" role="tab" aria-selected="true" onclick="switchCategory('veg')">
+        <span class="cat-dot cat-dot--veg"></span> 🥗 VEG
+      </button>
+      <button class="cat-tab cat-tab--nonveg" id="tabNonveg" role="tab" aria-selected="false" onclick="switchCategory('nonveg')">
+        <span class="cat-dot cat-dot--nonveg"></span> 🍗 NON-VEG
+      </button>
+    </div>
+
+    <!-- Scrollable Menu Grid -->
+    <div class="menu-scroll-area">
+      <div class="menu-grid" id="menuVeg" role="tabpanel"></div>
+      <div class="menu-grid hidden" id="menuNonveg" role="tabpanel"></div>
+    </div>
+
+    <!-- Floating Cart Bar -->
+    <div class="cart-bar hidden" id="cartBar">
+      <div class="cart-bar__inner">
+        <div class="cart-bar__info">
+          <span class="cart-count-badge" id="cartCountBadge">0</span>
+          <span class="cart-bar__label">items</span>
+        </div>
+        <span class="cart-bar__total" id="cartBarTotal">₹0</span>
+        <button class="btn-primary btn-sm" onclick="goToCheckout()">CHECKOUT →</button>
+      </div>
+    </div>
+
+  </div><!-- /view--menu -->
+
+
+  <!-- ============================================================
+       VIEW: CHECKOUT
+       ============================================================ -->
+  <div class="view view--checkout" id="viewCheckout">
+
+    <header class="app-header" role="banner">
+      <div class="app-header__inner">
+        <button class="btn-back-icon" onclick="showView('viewMenu')" aria-label="Back">←</button>
+        <span class="view-title">YOUR ORDER</span>
+        <div style="width:40px"></div>
+      </div>
+    </header>
+
+    <div class="checkout-scroll">
+      <div class="cart-list" id="cartList" aria-live="polite"></div>
+
+      <div class="glass-card order-summary">
+        <div class="summary-row">
+          <span class="summary-label">ITEMS</span>
+          <span class="summary-val" id="summaryCount">0</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-row total-row">
+          <span class="summary-label">TOTAL</span>
+          <span class="summary-val neon-text total-val" id="summaryGrandTotal">₹0</span>
+        </div>
+      </div>
+
+      <!-- Payment -->
+      <div class="glass-card payment-card">
+        <h3 class="payment-title">CHOOSE PAYMENT</h3>
+        <div class="payment-options">
+          <button class="payment-btn payment-btn--cash" id="btnCash" onclick="selectPayment('cash')" aria-pressed="false">
+            <span class="payment-icon">💵</span>
+            <span class="payment-label">CASH</span>
+            <span class="payment-sub">Pay at counter</span>
+          </button>
+          <button class="payment-btn payment-btn--upi" id="btnUpi" onclick="selectPayment('upi')" aria-pressed="false">
+            <span class="payment-icon">📱</span>
+            <span class="payment-label">UPI</span>
+            <span class="payment-sub">Scan QR & Pay</span>
+          </button>
+        </div>
+        <button class="btn-primary btn-full btn-xl" id="btnPlaceOrder" onclick="placeOrder()" disabled>
+          PLACE ORDER 🔥
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /view--checkout -->
+
+
+  <!-- ============================================================
+       VIEW: CONFIRMATION
+       ============================================================ -->
+  <div class="view view--confirm" id="viewConfirm">
+    <div class="confirm-center">
+      <div class="confirm-anim">
+        <div class="confirm-ring"></div>
+        <div class="confirm-ring confirm-ring--2"></div>
+        <span class="confirm-icon">✅</span>
+      </div>
+      <h2 class="confirm-title neon-text">ORDER PLACED!</h2>
+      <p class="confirm-sub">We have received your order 🔥</p>
+
+      <div class="glass-card confirm-details">
+        <div class="confirm-row">
+          <span class="confirm-key">ORDER #</span>
+          <span class="confirm-val neon-text" id="confirmOrderId"></span>
+        </div>
+        <div class="confirm-row">
+          <span class="confirm-key">NAME</span>
+          <span class="confirm-val" id="confirmName"></span>
+        </div>
+        <div class="confirm-row">
+          <span class="confirm-key">PAYMENT</span>
+          <span class="confirm-val" id="confirmPayment"></span>
+        </div>
+        <div class="confirm-row">
+          <span class="confirm-key">LIVE TIMER</span>
+          <span class="confirm-val neon-text live-timer-display" id="confirmWait">00:00</span>
+        </div>
+        <div class="confirm-row">
+          <span class="confirm-key">TOTAL</span>
+          <span class="confirm-val neon-text" id="confirmTotal"></span>
+        </div>
+      </div>
+
+      <button class="btn-primary btn-xl" onclick="newOrder()">ORDER AGAIN 🍔</button>
+    </div>
+  </div><!-- /view--confirm -->
+
+
+  <!-- ============================================================
+       ADMIN PANEL (full-screen overlay, same page!)
+       ============================================================ -->
+  <div class="admin-overlay hidden" id="adminOverlay" role="dialog" aria-modal="true">
+
+    <!-- Admin Login -->
+    <div class="admin-login-screen" id="adminLoginScreen">
+      <div class="admin-login-inner">
+        <img src="logo-bold.png" alt="R54 Bistro" class="admin-login-logo" />
+        <h2 class="admin-login-title">STAFF LOGIN</h2>
+        <p class="admin-login-sub">Route 54 Bistro Admin Panel</p>
+        <label class="field-label" for="adminPass">PASSWORD</label>
+        <input type="password" id="adminPass" class="neon-input" placeholder="••••••••" autocomplete="current-password" />
+        <button class="btn-primary btn-full btn-xl" onclick="adminLogin()" style="margin-top:12px">LOGIN →</button>
+        <button class="btn-ghost" onclick="closeAdminOverlay()" style="margin-top:10px; width:100%">✕ BACK TO ORDERING</button>
+      </div>
+    </div>
+
+    <!-- Admin Dashboard -->
+    <div class="admin-dashboard hidden" id="adminDashboard">
+
+      <header class="admin-header">
+        <div class="admin-header__inner" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div class="admin-brand" style="display: flex; align-items: center; gap: 8px;">
+            <img src="logo-bold.png" alt="R54" class="logo-img logo-img--sm" style="width: 32px; height: 32px; border-radius: 8px;" />
+            <span class="admin-brand-name" style="font-family: 'Bebas Neue'; font-size: 24px;">ADMIN</span>
+          </div>
+          <div class="admin-clock" id="adminClock" style="font-family: 'Space Mono'; color: var(--text-muted); font-size: 14px;"></div>
+          <button class="btn-exit-admin" onclick="exitAdminMode()" aria-label="Exit admin" style="background: none; border: 1px solid var(--primary); color: var(--text-light); padding: 4px 12px; border-radius: 20px; font-size: 12px;">✕ EXIT</button>
+        </div>
+      </header>
+
+      <nav class="admin-nav" role="navigation" style="z-index: 10;">
+        <button class="admin-nav-btn active" id="anbActive" onclick="showAdminTab('active')" aria-pressed="true">
+          ⏳ ACTIVE <span class="nav-badge" id="pendingBadge">0</span>
+        </button>
+        <button class="admin-nav-btn" id="anbClosed" onclick="showAdminTab('closed')" aria-pressed="false">
+          ✅ CLOSED
+        </button>
+        <button class="admin-nav-btn" id="anbMenu" onclick="showAdminTab('menu')" aria-pressed="false">
+          🍽️ MENU
+        </button>
+        <button class="admin-nav-btn" id="anbReports" onclick="showAdminTab('reports')" aria-pressed="false">
+          📊 REPORTS
+        </button>
+        <button class="admin-nav-btn" id="anbSettings" onclick="showAdminTab('settings')" aria-pressed="false">
+          ⚙️ SETTINGS
+        </button>
+      </nav>
+
+      <div class="admin-content" style="z-index: 1; position: relative;">
+
+        <!-- ACTIVE ORDERS TAB -->
+        <div class="admin-tab" id="tabActive">
+          <div class="stats-row">
+            <div class="stat-card glass-card">
+              <span class="stat-icon">⏳</span>
+              <div class="stat-info">
+                <span class="stat-num neon-text" id="statPending">0</span>
+                <span class="stat-lbl">PENDING</span>
+              </div>
+            </div>
+            <div class="stat-card glass-card">
+              <span class="stat-icon">✅</span>
+              <div class="stat-info">
+                <span class="stat-num neon-green" id="statDone">0</span>
+                <span class="stat-lbl">DONE TODAY</span>
+              </div>
+            </div>
+            <div class="stat-card glass-card">
+              <span class="stat-icon">💰</span>
+              <div class="stat-info">
+                <span class="stat-num neon-text" id="statRevenue">₹0</span>
+                <span class="stat-lbl">TODAY'S REVENUE</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="orders-section-label">LIVE ACTIVE ORDERS <span class="section-badge" id="activeOrderCount">0</span></div>
+          <div class="orders-list" id="activeOrdersList" aria-live="polite">
+            <div class="empty-state"><span class="empty-icon">🕐</span><p>No active orders.</p></div>
+          </div>
+        </div>
+
+        <!-- CLOSED ORDERS TAB -->
+        <div class="admin-tab hidden" id="tabClosed">
+          <div class="orders-section-label neon-red">CLOSED ORDERS</div>
+          <div class="orders-list" id="closedOrdersList">
+            <div class="empty-state"><span class="empty-icon">📦</span><p>No closed orders yet.</p></div>
+          </div>
+        </div>
+
+        <!-- MENU TAB -->
+        <div class="admin-tab hidden" id="tabMenu">
+          <div class="glass-card add-item-card">
+            <div class="card-subhead">ADD NEW ITEM</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="field-label" for="newItemName">ITEM NAME</label>
+                <input type="text" id="newItemName" class="neon-input" placeholder="e.g. Paneer Burger" />
+              </div>
+              <div class="form-group">
+                <label class="field-label" for="newItemPrice">PRICE (₹)</label>
+                <input type="number" id="newItemPrice" class="neon-input" placeholder="120" min="1" />
+              </div>
+              <div class="form-group">
+                <label class="field-label" for="newItemEmoji">EMOJI</label>
+                <input type="text" id="newItemEmoji" class="neon-input" placeholder="🍔" maxlength="4" />
+                <!-- Emoji Presets -->
+                <div class="emoji-presets" style="display:flex; gap:8px; margin-top:8px; font-size:24px; cursor:pointer;">
+                  <span onclick="document.getElementById('newItemEmoji').value='🍔'">🍔</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🍟'">🍟</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🍕'">🍕</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🌯'">🌯</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🥪'">🥪</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🍗'">🍗</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🥤'">🥤</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="field-label" for="newItemCategory">CATEGORY</label>
+                <select id="newItemCategory" class="neon-input neon-select">
+                  <option value="veg">VEG</option>
+                  <option value="nonveg">NON-VEG</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn-primary" onclick="addMenuItem()">+ ADD TO MENU</button>
+          </div>
+
+          <div class="subsection-title"><span class="cat-dot cat-dot--veg"></span> VEG ITEMS</div>
+          <div class="menu-admin-list" id="adminMenuVeg"></div>
+          <div class="subsection-title" style="margin-top:16px"><span class="cat-dot cat-dot--nonveg"></span> NON-VEG ITEMS</div>
+          <div class="menu-admin-list" id="adminMenuNonveg"></div>
+        </div>
+
+        <!-- REPORTS TAB -->
+        <div class="admin-tab hidden" id="tabReports">
+          <div class="glass-card report-filter-card">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="field-label" for="reportDate">REPORT DATE</label>
+                <input type="date" id="reportDate" class="neon-input" />
+              </div>
+              <div class="form-group form-group--actions">
+                <button class="btn-primary" onclick="generateReport()">VIEW REPORT</button>
+                <button class="btn-secondary" onclick="downloadReport()">⬇ CSV</button>
+              </div>
+            </div>
+          </div>
+          <div class="stats-row">
+            <div class="stat-card glass-card">
+              <span class="stat-icon">📋</span>
+              <div class="stat-info"><span class="stat-num neon-text" id="rTotalOrders">–</span><span class="stat-lbl">ORDERS</span></div>
+            </div>
+            <div class="stat-card glass-card">
+              <span class="stat-icon">💰</span>
+              <div class="stat-info"><span class="stat-num neon-text" id="rRevenue">₹–</span><span class="stat-lbl">REVENUE</span></div>
+            </div>
+            <div class="stat-card glass-card">
+              <span class="stat-icon">🥗</span>
+              <div class="stat-info"><span class="stat-num neon-green" id="rVegOrders">–</span><span class="stat-lbl">VEG</span></div>
+            </div>
+            <div class="stat-card glass-card">
+              <span class="stat-icon">🍗</span>
+              <div class="stat-info"><span class="stat-num neon-red" id="rNonvegOrders">–</span><span class="stat-lbl">NON-VEG</span></div>
+            </div>
+          </div>
+          <div class="glass-card" style="margin-bottom:12px">
+            <div class="card-subhead">TOP ITEMS</div>
+            <div id="topItemsList"><p class="empty-hint">Generate report to view</p></div>
+          </div>
+          <div class="glass-card">
+            <div class="card-subhead">ORDER BREAKDOWN</div>
+            <div class="report-orders-list" id="reportOrdersList"><p class="empty-hint">Generate report to view</p></div>
+          </div>
+        </div>
+
+        <!-- SETTINGS TAB -->
+        <div class="admin-tab hidden" id="tabSettings">
+
+          <!-- QR Upload -->
+          <div class="glass-card settings-card">
+            <div class="card-subhead">UPI QR CODE</div>
+            <p class="settings-desc">Customers will see this when they choose UPI payment.</p>
+            <div class="qr-preview-wrap">
+              <div class="qr-preview-frame" id="qrPreviewFrame">
+                <img id="qrPreviewImg" src="" alt="QR" class="qr-preview-img hidden" />
+                <div id="qrPreviewPlaceholder" class="qr-preview-placeholder"><span>📱</span><p>No QR uploaded</p></div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="qrFile">SELECT QR IMAGE</label>
+              <input type="file" id="qrFile" accept="image/*" class="file-input" onchange="previewQR(event)" />
+              <label for="qrFile" class="file-label btn-secondary">📁 CHOOSE IMAGE</label>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="qrPassword">QR CHANGE PASSWORD</label>
+              <input type="password" id="qrPassword" class="neon-input" placeholder="Enter QR password..." />
+            </div>
+            <button class="btn-primary" onclick="saveQRCode()">SAVE QR CODE</button>
+          </div>
+
+          <!-- Truck Settings -->
+          <div class="glass-card settings-card">
+            <div class="card-subhead">BISTRO SETTINGS</div>
+            <div class="form-group">
+              <label class="field-label" for="truckName">RESTAURANT NAME</label>
+              <input type="text" id="truckName" class="neon-input" placeholder="Route 54 Bistro" />
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="upiId">UPI ID</label>
+              <input type="text" id="upiId" class="neon-input" placeholder="yourname@upi" />
+            </div>
+            <button class="btn-primary" onclick="saveTruckSettings()">SAVE SETTINGS</button>
+          </div>
+
+          <!-- Change Password -->
+          <div class="glass-card settings-card">
+            <div class="card-subhead">CHANGE ADMIN PASSWORD</div>
+            <div class="form-group">
+              <label class="field-label" for="oldPassword">CURRENT PASSWORD</label>
+              <input type="password" id="oldPassword" class="neon-input" placeholder="Current..." />
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="newPassword">NEW PASSWORD</label>
+              <input type="password" id="newPassword" class="neon-input" placeholder="New password..." />
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="confirmPassword">CONFIRM NEW</label>
+              <input type="password" id="confirmPassword" class="neon-input" placeholder="Confirm..." />
+            </div>
+            <button class="btn-primary" onclick="changePassword()">UPDATE PASSWORD</button>
+          </div>
+
+        </div><!-- /tabSettings -->
+
+      </div><!-- /admin-content -->
+    </div><!-- /adminDashboard -->
+
+  </div><!-- /admin-overlay -->
+
+
+  <!-- UPI QR MODAL -->
+  <div class="modal-backdrop hidden" id="upiModal" role="dialog" aria-modal="true">
+    <div class="modal-box glass-card">
+      <button class="modal-close" onclick="closeUpiModal()">✕</button>
+      <h2 class="modal-title neon-text">SCAN & PAY</h2>
+      <p class="modal-sub">Use any UPI app to scan</p>
+      <div class="qr-display" id="qrDisplay">
+        <div class="qr-placeholder" id="qrPlaceholder">
+          <span class="qr-placeholder__icon">📱</span>
+          <p class="qr-placeholder__text">QR not set up.<br/>Ask staff to upload QR.</p>
+        </div>
+        <img class="qr-image hidden" id="qrImage" src="" alt="UPI QR Code" />
+      </div>
+      <div class="upi-amount neon-text" id="upiAmount"></div>
+      <p class="upi-instruction">Tap below AFTER payment is done</p>
+      <button class="btn-primary btn-full btn-xl" onclick="confirmUpiPayment()">✅ PAYMENT DONE – CONFIRM</button>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+  <!-- Socket.io -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Data & Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
