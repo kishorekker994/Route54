@@ -54,20 +54,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   await fetchInitialData();
 });
 
+// Normalize a DB row (snake_case) to camelCase for frontend use
+function normalizeOrder(o) {
+  return {
+    id:            o.id,
+    customerName:  o.customer_name  ?? o.customerName  ?? '',
+    items:         typeof o.items === 'string' ? JSON.parse(o.items) : (o.items || []),
+    total:         o.total          ?? 0,
+    paymentMethod: o.payment_method ?? o.paymentMethod ?? 'cash',
+    status:        o.status         ?? 'pending',
+    date:          o.date           ?? '',
+    timestamp:     o.timestamp      ?? Date.now(),
+    waitTime:      o.wait_time      ?? o.waitTime ?? 0,
+  };
+}
+
 async function fetchInitialData() {
   try {
     const [menuRes, ordersRes, settingsRes] = await Promise.all([
       fetch('/api/menu'), fetch('/api/orders'), fetch('/api/settings')
     ]);
     if (menuRes.ok) APP_DATA.menu = await menuRes.json();
-    if (ordersRes.ok) APP_DATA.orders = await ordersRes.json();
+    if (ordersRes.ok) {
+      const raw = await ordersRes.json();
+      APP_DATA.orders = raw.map(normalizeOrder);
+    }
     if (settingsRes.ok) {
       const s = await settingsRes.json();
       if (Object.keys(s).length > 0) APP_DATA.settings = { ...APP_DATA.settings, ...s };
     }
   } catch (err) {
     console.error("Fetch failed (maybe running static without backend).", err);
-    // Fallback data if needed...
   }
   
   if (isAdminLoggedIn) {
@@ -80,7 +97,7 @@ async function fetchInitialData() {
 // SOCKET LISTENERS (REAL-TIME)
 // ============================================================
 socket.on('order_added', (order) => {
-  APP_DATA.orders.unshift(order); // Add to front
+  APP_DATA.orders.unshift(normalizeOrder(order));
   if (isAdminLoggedIn) renderOrders();
 });
 
@@ -479,7 +496,12 @@ function showAdminTab(tab) {
 
   if (tab === 'active' || tab === 'closed') renderOrders();
   if (tab === 'menu') renderMenuAdmin();
-  if (tab === 'reports') generateReport();
+  if (tab === 'reports') {
+    // Ensure date is always set before generating report
+    const rd = document.getElementById('reportDate');
+    if (rd && !rd.value) rd.value = getTodayStr();
+    generateReport();
+  }
   if (tab === 'settings') loadSettingsForm();
 }
 
@@ -566,11 +588,12 @@ function closeOrder(orderId) {
   // Emit to server
   socket.emit('update_order_status', { orderId, status: 'closed' });
   
-  // Optimistic
+  // Optimistic update in local state
   const o = APP_DATA.orders.find(x => x.id === orderId);
   if (o) o.status = 'closed';
   
-  showToast('Order closed! ✅', 'success');
+  showToast('Order closed! ✅ Check Closed tab', 'success');
+  // Re-render active tab to remove it, keeping current tab
   renderOrders();
 }
 
@@ -651,10 +674,20 @@ function deleteMenuItem(itemId) {
 // ADMIN: REPORTS
 // ============================================================
 function generateReport() {
-  const dateStr = document.getElementById('reportDate')?.value || getTodayStr();
-  const orders  = APP_DATA.orders.filter(o => o.date === dateStr && o.status === 'closed');
+  const rdEl   = document.getElementById('reportDate');
+  if (rdEl && !rdEl.value) rdEl.value = getTodayStr();
+  const dateStr = rdEl?.value || getTodayStr();
 
-  const revenue  = orders.reduce((s, o) => s + o.total, 0);
+  // Normalize order date — DB may store as 'YYYY-MM-DD' or as a timestamp number
+  const normDate = (o) => {
+    if (!o.date) return new Date(o.timestamp).toISOString().split('T')[0];
+    if (/^\d+$/.test(String(o.date))) return new Date(Number(o.date)).toISOString().split('T')[0];
+    return o.date;
+  };
+
+  const orders = APP_DATA.orders.filter(o => normDate(o) === dateStr && o.status === 'closed');
+
+  const revenue  = orders.reduce((s, o) => s + Number(o.total), 0);
   const vegCount = orders.filter(o => o.items.some(i => APP_DATA.menu.find(m => m.id === i.id)?.category === 'veg')).length;
 
   document.getElementById('rTotalOrders').textContent  = orders.length;
@@ -665,36 +698,40 @@ function generateReport() {
   // Top items
   const itemCounts = {};
   orders.forEach(o => o.items.forEach(i => {
-    if (!itemCounts[i.name]) itemCounts[i.name] = { name: i.name, emoji: i.emoji, count: 0 };
+    if (!itemCounts[i.name]) itemCounts[i.name] = { name: i.name, emoji: i.emoji || '🍽️', count: 0 };
     itemCounts[i.name].count += i.qty;
   }));
-  const top = Object.values(itemCounts).sort((a, b) => b.count - a.count).slice(0, 5);
+  const top  = Object.values(itemCounts).sort((a, b) => b.count - a.count).slice(0, 5);
   const maxC = top[0]?.count || 1;
   const topEl = document.getElementById('topItemsList');
-  topEl.innerHTML = top.length === 0
-    ? `<p class="empty-hint">No orders for this date.</p>`
-    : top.map((item, i) => `
-      <div class="top-item-row">
-        <span class="top-item-rank">#${i+1}</span>
-        <span>${item.emoji}</span>
-        <span class="top-item-name">${escHtml(item.name)}</span>
-        <span class="top-item-count">${item.count}x</span>
-      </div>
-      <div class="top-item-bar" style="width:${Math.round((item.count/maxC)*100)}%"></div>
-    `).join('');
+  if (topEl) {
+    topEl.innerHTML = top.length === 0
+      ? `<p class="empty-hint">No orders for ${dateStr}.</p>`
+      : top.map((item, i) => `
+        <div class="top-item-row">
+          <span class="top-item-rank">#${i+1}</span>
+          <span>${item.emoji}</span>
+          <span class="top-item-name">${escHtml(item.name)}</span>
+          <span class="top-item-count">${item.count}x</span>
+        </div>
+        <div class="top-item-bar" style="width:${Math.round((item.count/maxC)*100)}%"></div>
+      `).join('');
+  }
 
-  // Order list
+  // Order breakdown list
   const listEl = document.getElementById('reportOrdersList');
-  listEl.innerHTML = orders.length === 0
-    ? `<p class="empty-hint">No closed orders for this date.</p>`
-    : orders.map(o => `
-      <div class="report-order-row">
-        <span class="report-order-id">${o.id}</span>
-        <span class="report-order-name">${escHtml(o.customerName)}</span>
-        <span class="report-order-pay">${o.paymentMethod === 'cash' ? '💵' : '📱'}</span>
-        <span class="report-order-total">${formatCurrency(o.total)}</span>
-      </div>`
-    ).join('');
+  if (listEl) {
+    listEl.innerHTML = orders.length === 0
+      ? `<p class="empty-hint">No closed orders for ${dateStr}.</p>`
+      : orders.map(o => `
+        <div class="report-order-row">
+          <span class="report-order-id">${o.id}</span>
+          <span class="report-order-name">${escHtml(o.customerName)}</span>
+          <span class="report-order-pay">${o.paymentMethod === 'cash' ? '💵' : '📱'}</span>
+          <span class="report-order-total">${formatCurrency(Number(o.total))}</span>
+        </div>`
+      ).join('');
+  }
 }
 
 function downloadReport() {

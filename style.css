@@ -888,25 +888,34 @@ body {
 
 /* Admin Content */
 .admin-content {
-  flex: 1 1 0; overflow-y: auto;
+  flex: 1 1 0;
+  overflow: hidden;  /* NO global scroll — each tab scrolls internally */
+  position: relative;
+}
+.admin-content::-webkit-scrollbar { display: none; }
+
+/* Admin Tabs */
+.admin-tab {
+  position: absolute; inset: 0;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding: 14px;
   padding-bottom: calc(20px + var(--safe-bottom));
-  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  animation: fadeInUp 0.25s ease both;
 }
-.admin-content::-webkit-scrollbar { width: 4px; }
-.admin-content::-webkit-scrollbar-thumb { background: var(--border); }
-
-/* Admin Tabs */
-.admin-tab { animation: fadeInUp 0.3s ease both; }
+.admin-tab.hidden {
+  display: none !important;
+}
 
 /* Stats */
 .stats-row {
-  display: grid; grid-template-columns: repeat(2, 1fr);
-  gap: 10px; margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 8px; margin-bottom: 14px;
 }
-@media (min-width: 480px) { .stats-row { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 480px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
 
 .stat-card {
   display: flex; align-items: center; gap: 10px; padding: 14px;
@@ -1044,7 +1053,7 @@ body {
 
 /* Reports */
 .report-filter-card { margin-bottom: 14px; }
-.report-orders-list { display: flex; flex-direction: column; gap: 5px; max-height: 300px; overflow-y: auto; }
+.report-orders-list { display: flex; flex-direction: column; gap: 5px; }
 .report-order-row {
   display: flex; align-items: center; gap: 8px; padding: 7px 0;
   border-bottom: 1px solid rgba(255,255,255,0.04);
