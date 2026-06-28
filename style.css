@@ -251,21 +251,43 @@ body {
   flex-shrink: 0;
 }
 
-/* Neon Logo Area */
-.main-neon-logo {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
+/* Hero Section */
+.hero-section {
+  position: relative;
   flex-shrink: 0;
+  height: 42vh;
+  min-height: 220px;
+  overflow: hidden;
 }
 
-.neon-logo-img {
-  width: 100%;
-  max-width: 500px;
-  height: auto;
-  border-radius: var(--r-md);
-  box-shadow: var(--glow-primary);
+.hero-img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: center center;
+  display: block;
+}
+
+.hero-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(13,13,13,0.0) 0%,
+    rgba(13,13,13,0.0) 40%,
+    rgba(13,13,13,0.5) 75%,
+    rgba(13,13,13,0.95) 100%
+  );
+}
+
+.hero-tagline {
+  position: absolute;
+  bottom: 12px; left: 0; right: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: clamp(13px, 3.5vw, 20px);
+  letter-spacing: 0.1em;
+  color: var(--primary);
+  text-shadow: var(--glow-primary);
+  padding: 0 16px;
 }
 
 /* Landing Card */
