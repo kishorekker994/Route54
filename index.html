@@ -45,33 +45,41 @@
       </div>
     </header>
 
-    <!-- Hero Image (the user's neon sign) -->
-    <div class="hero-section" role="img" aria-label="Route 54 Bistro Neon Sign">
-      <img src="hero-bg.png" alt="Route 54 neon sign" class="hero-img" />
-      <div class="hero-overlay" aria-hidden="true"></div>
-      <p class="hero-tagline">STREET FOOD THAT HITS DIFFERENT 🔥</p>
-    </div>
+    <div class="landing-body">
+      <!-- Hero Image (the user's neon sign) -->
+      <div class="hero-section" role="img" aria-label="Route 54 Bistro Neon Sign">
+        <img src="hero-bg.png" alt="Route 54 neon sign" class="hero-img" />
+        <div class="hero-overlay" aria-hidden="true"></div>
+        <p class="hero-tagline">STREET FOOD THAT HITS DIFFERENT 🔥</p>
+      </div>
 
-    <!-- Name Entry Card -->
-    <div class="landing-card">
-      <label class="field-label" for="customerName">YOUR NAME</label>
-      <input
-        type="text"
-        id="customerName"
-        class="neon-input landing-input"
-        placeholder="Type your name..."
-        autocomplete="given-name"
-        aria-required="true"
-        maxlength="50"
-      />
-      <button class="btn-primary btn-full btn-xl" id="btnStartOrder" onclick="startOrder()">
-        START ORDERING →
-      </button>
-    </div>
+      <div class="landing-forms">
+        <!-- Name Entry Card -->
+        <div class="landing-card">
+          <label class="field-label" for="customerName">YOUR NAME</label>
+          <input
+            type="text"
+            id="customerName"
+            class="neon-input landing-input"
+            placeholder="Type your name..."
+            autocomplete="given-name"
+            aria-required="true"
+            maxlength="50"
+          />
+          <button class="btn-primary btn-full btn-xl" id="btnStartOrder" onclick="startOrder()">
+            START ORDERING →
+          </button>
+        </div>
 
-    <!-- Explicit Admin Login Button -->
-    <div class="landing-footer">
-      <button class="btn-ghost" onclick="openStaffModal()">👨‍🍳 ADMIN LOGIN</button>
+        <div class="food-truck-preview">
+          <img src="food-truck.png" alt="Route 54 Food Truck" class="truck-img" />
+        </div>
+
+        <!-- Explicit Admin Login Button -->
+        <div class="landing-footer">
+          <button class="btn-ghost" onclick="openStaffModal()">👨‍🍳 ADMIN LOGIN</button>
+        </div>
+      </div>
     </div>
 
   </div><!-- /view--landing -->
@@ -85,9 +93,9 @@
     <!-- Header -->
     <header class="app-header" role="banner">
       <div class="app-header__inner">
-        <div class="logo-badge logo-badge--sm">
-          <img src="logo-bold.png" alt="R54" class="logo-img" />
-        </div>
+        <div class="logo-badge" onclick="handleLogoTap()">
+        <img src="logo-bold.png" class="logo-img" alt="Route 54" />
+      </div>
         <div class="brand-name-wrap">
           <span class="brand-name brand-name--sm">ROUTE <span class="brand-54">54</span> <span class="brand-bistro-inline">BISTRO</span></span>
         </div>
@@ -112,6 +120,8 @@
       <div class="menu-grid" id="menuVeg" role="tabpanel"></div>
       <div class="menu-grid hidden" id="menuNonveg" role="tabpanel"></div>
     </div>
+
+
 
     <!-- Floating Cart Bar -->
     <div class="cart-bar hidden" id="cartBar">
