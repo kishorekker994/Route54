@@ -185,7 +185,7 @@ io.on('connection', (socket) => {
 });
 
 // Catch-all route to serve index.html for SPA routing and prevent 404s
-app.get('*', (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
