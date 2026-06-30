@@ -23,7 +23,7 @@ app.use(express.static(path.join(__dirname, '/')));
 
 // Security & In-memory store
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'route54admin';
-const ADMIN_TOKEN = crypto.randomUUID();
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'route54-admin-static-token';
 
 let localMenu = [];
 let localOrders = [];
@@ -80,7 +80,7 @@ app.post('/api/login', (req, res) => {
   }
 });
 
-app.get('/api/menu', requireAuth, async (req, res) => {
+app.get('/api/menu', async (req, res) => {
   if (!process.env.DATABASE_URL) return res.json(localMenu);
   try {
     const result = await pool.query('SELECT * FROM menu');
@@ -106,16 +106,16 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 });
 
 // WEBSOCKETS (Real-time sync)
-io.use((socket, next) => {
+function checkAdminSocket(socket) {
   const token = socket.handshake.auth.token;
-  if (token === ADMIN_TOKEN) next();
-  else next(new Error("unauthorized"));
-});
+  return token === ADMIN_TOKEN || token === `Bearer ${ADMIN_TOKEN}`;
+}
 
 io.on('connection', (socket) => {
   console.log('A client connected');
   
   socket.on('new_order', async (order) => {
+    console.log(`[Socket] Received new_order: ${order.id} (Status: ${order.status}, Customer: ${order.customerName})`);
     if (process.env.DATABASE_URL) {
       try {
         await pool.query('INSERT INTO orders (id, customer_name, items, total, payment_method, status, date, timestamp, wait_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
@@ -124,10 +124,12 @@ io.on('connection', (socket) => {
     } else {
       localOrders.unshift(order);
     }
+    console.log(`[Socket] Broadcasting order_added: ${order.id}`);
     io.emit('order_added', order);
   });
 
   socket.on('update_order_status', async ({ orderId, status, waitTime }) => {
+    if (!checkAdminSocket(socket)) return;
     if (process.env.DATABASE_URL) {
       try {
         await pool.query('UPDATE orders SET status = $1, wait_time = $2 WHERE id = $3', [status, waitTime || 0, orderId]);
@@ -140,6 +142,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('update_order_items', async ({ orderId, items }) => {
+    if (!checkAdminSocket(socket)) return;
     if (process.env.DATABASE_URL) {
       try {
         await pool.query('UPDATE orders SET items = $1 WHERE id = $2', [JSON.stringify(items), orderId]);
@@ -152,6 +155,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('update_menu_item', async (item) => {
+    if (!checkAdminSocket(socket)) return;
     if (process.env.DATABASE_URL) {
       try {
         await pool.query('UPDATE menu SET available = $1 WHERE id = $2', [item.available, item.id]);
@@ -164,6 +168,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('add_menu_item', async (item) => {
+    if (!checkAdminSocket(socket)) return;
     if (process.env.DATABASE_URL) {
       try {
         await pool.query('INSERT INTO menu (id, name, emoji, price, category, available) VALUES ($1, $2, $3, $4, $5, $6)',
@@ -176,6 +181,7 @@ io.on('connection', (socket) => {
   });
   
   socket.on('delete_menu_item', async (itemId) => {
+    if (!checkAdminSocket(socket)) return;
     if (process.env.DATABASE_URL) {
       try {
         await pool.query('DELETE FROM menu WHERE id = $1', [itemId]);

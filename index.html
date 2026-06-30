@@ -45,19 +45,19 @@
   <div class="view view--name" id="viewName">
     <header class="app-header" role="banner">
       <div class="app-header__inner">
-        <button class="btn-back-icon" onclick="showView('viewAdmin')" aria-label="Back">←</button>
+        <button class="btn-back-icon" id="btnNameBack" onclick="showView('viewAdmin')" aria-label="Back">←</button>
         <span class="view-title">NEW ORDER</span>
         <div style="width:40px"></div>
       </div>
     </header>
     <div class="landing-body" style="justify-content: center; align-items: center; padding: 20px;">
       <div class="landing-card" style="width: 100%; max-width: 400px; padding: 24px; border-radius: var(--r-xl);">
-        <h2 class="modal-title neon-text" style="font-size: 28px; text-align: center; margin-bottom: 20px;">CUSTOMER NAME</h2>
+        <h2 class="modal-title neon-text" style="font-size: 28px; text-align: center; margin-bottom: 20px;">YOUR NAME</h2>
         <input
           type="text"
           id="customerName"
           class="neon-input landing-input"
-          placeholder="Enter customer name..."
+          placeholder="Enter your name..."
           autocomplete="off"
           maxlength="50"
         />
@@ -136,6 +136,9 @@
     </header>
 
     <div class="checkout-scroll">
+      <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+        <button class="btn-primary btn-sm" onclick="showView('viewMenu')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white;">✏️ EDIT ORDER</button>
+      </div>
       <div class="cart-list" id="cartList" aria-live="polite"></div>
 
       <div class="glass-card order-summary">
@@ -151,7 +154,7 @@
       </div>
 
       <!-- Payment -->
-      <div class="glass-card payment-card">
+      <div class="glass-card payment-card" id="paymentCard">
         <h3 class="payment-title">CHOOSE PAYMENT</h3>
         <div class="payment-options">
           <button class="payment-btn payment-btn--cash" id="btnCash" onclick="selectPayment('cash')" aria-pressed="false">
@@ -165,10 +168,11 @@
             <span class="payment-sub">Scan QR & Pay</span>
           </button>
         </div>
-        <button class="btn-primary btn-full btn-xl" id="btnPlaceOrder" onclick="placeOrder()" disabled>
-          PLACE ORDER 🔥
-        </button>
       </div>
+      
+      <button class="btn-primary btn-full btn-xl" id="btnPlaceOrder" onclick="placeOrder()" disabled style="margin-top:20px;">
+        PLACE ORDER 🔥
+      </button>
     </div>
 
   </div><!-- /view--checkout -->
@@ -179,13 +183,36 @@
        ============================================================ -->
   <div class="view view--confirm" id="viewConfirm">
     <div class="confirm-center">
-      <div class="confirm-anim">
+      <div class="confirm-anim" id="confirmAnim">
         <div class="confirm-ring"></div>
         <div class="confirm-ring confirm-ring--2"></div>
-        <span class="confirm-icon">✅</span>
+        <span class="confirm-icon" id="confirmIcon">✅</span>
       </div>
-      <h2 class="confirm-title neon-text">ORDER PLACED!</h2>
-      <p class="confirm-sub">We have received your order 🔥</p>
+      <h2 class="confirm-title neon-text" id="confirmTitle">ORDER PLACED!</h2>
+      <p class="confirm-sub" id="confirmSub">We have received your order 🔥</p>
+
+      <!-- Live Order Status Pipeline -->
+      <div class="order-status-pipeline glass-card">
+        <div class="pipeline-step" id="pipeReceived">
+          <div class="pipeline-dot pipeline-dot--done">📥</div>
+          <div class="pipeline-label">Received</div>
+        </div>
+        <div class="pipeline-line" id="pipeLineApprove"></div>
+        <div class="pipeline-step" id="pipeApproved">
+          <div class="pipeline-dot" id="pipeDotApprove">👨‍🍳</div>
+          <div class="pipeline-label">Approved</div>
+        </div>
+        <div class="pipeline-line" id="pipeLineCooking"></div>
+        <div class="pipeline-step" id="pipeCooking">
+          <div class="pipeline-dot" id="pipeDotCooking">🍳</div>
+          <div class="pipeline-label">Cooking</div>
+        </div>
+        <div class="pipeline-line" id="pipeLineReady"></div>
+        <div class="pipeline-step" id="pipeReady">
+          <div class="pipeline-dot" id="pipeDotReady">🎉</div>
+          <div class="pipeline-label">Ready!</div>
+        </div>
+      </div>
 
       <div class="glass-card confirm-details">
         <div class="confirm-row">
@@ -201,7 +228,7 @@
           <span class="confirm-val" id="confirmPayment"></span>
         </div>
         <div class="confirm-row">
-          <span class="confirm-key">LIVE TIMER</span>
+          <span class="confirm-key">WAIT TIME</span>
           <span class="confirm-val neon-text live-timer-display" id="confirmWait">00:00</span>
         </div>
         <div class="confirm-row">

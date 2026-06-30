@@ -13,6 +13,15 @@ socket.on("connect_error", (err) => {
   console.log("Socket connection error:", err.message);
 });
 
+socket.on("connect", () => {
+  console.log("Socket connected/reconnected");
+  if (isAdminLoggedIn) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isCustomerUrl = urlParams.get('customer') === '1';
+    fetchInitialData(isCustomerUrl);
+  }
+});
+
 // ---- GLOBAL STATE ----
 let APP_DATA = {
   menu: [],
@@ -35,6 +44,7 @@ let logoTapTimer    = null;
 let isAdminLoggedIn = false;
 let qrFileData      = null;
 let currentAdminTab = 'active';
+let currentOrderId  = null;  // Track customer's active order for real-time status updates
 
 // ============================================================
 // INIT & DATA FETCH
@@ -54,18 +64,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Start UI
-  isAdminLoggedIn = localStorage.getItem('r54_admin_logged_in') === 'true';
-  if (isAdminLoggedIn) {
-    showView('viewAdmin');
+  const urlParams = new URLSearchParams(window.location.search);
+  const isCustomerUrl = urlParams.get('customer') === '1';
+
+  if (isCustomerUrl) {
+    showView('viewName');
   } else {
-    showView('viewLogin');
+    isAdminLoggedIn = localStorage.getItem('r54_admin_logged_in') === 'true';
+    if (isAdminLoggedIn) {
+      showView('viewAdmin');
+    } else {
+      showView('viewLogin');
+    }
   }
 
   startAdminClock();
   startLiveTimers(); // Start the 1-second interval for all live timers
 
   // Fetch initial data
-  await fetchInitialData();
+  await fetchInitialData(isCustomerUrl);
 });
 
 // Normalize a DB row (snake_case) to camelCase for frontend use
@@ -83,22 +100,37 @@ function normalizeOrder(o) {
   };
 }
 
-async function fetchInitialData() {
+async function fetchInitialData(isCustomerUrl) {
   try {
-    const headers = { 'Authorization': localStorage.getItem('r54_admin_token') };
-    const [menuRes, ordersRes, settingsRes] = await Promise.all([
-      fetch('/api/menu', { headers }), 
-      fetch('/api/orders', { headers }), 
-      fetch('/api/settings', { headers })
-    ]);
-    if (menuRes.ok) APP_DATA.menu = await menuRes.json();
-    if (ordersRes.ok) {
-      const raw = await ordersRes.json();
-      APP_DATA.orders = raw.map(normalizeOrder);
-    }
-    if (settingsRes.ok) {
-      const s = await settingsRes.json();
-      if (Object.keys(s).length > 0) APP_DATA.settings = { ...APP_DATA.settings, ...s };
+    if (isCustomerUrl) {
+      const menuRes = await fetch('/api/menu');
+      if (menuRes.ok) APP_DATA.menu = await menuRes.json();
+    } else {
+      const headers = { 'Authorization': localStorage.getItem('r54_admin_token') };
+      const [menuRes, ordersRes, settingsRes] = await Promise.all([
+        fetch('/api/menu', { headers }), 
+        fetch('/api/orders', { headers }), 
+        fetch('/api/settings', { headers })
+      ]);
+      
+      if (ordersRes.status === 401) {
+        console.error('Unauthorized! Logging out...');
+        localStorage.removeItem('r54_admin_logged_in');
+        localStorage.removeItem('r54_admin_token');
+        isAdminLoggedIn = false;
+        showView('viewLogin');
+        return;
+      }
+      
+      if (menuRes.ok) APP_DATA.menu = await menuRes.json();
+      if (ordersRes.ok) {
+        const raw = await ordersRes.json();
+        APP_DATA.orders = raw.map(normalizeOrder);
+      }
+      if (settingsRes.ok) {
+        const s = await settingsRes.json();
+        if (Object.keys(s).length > 0) APP_DATA.settings = { ...APP_DATA.settings, ...s };
+      }
     }
   } catch (err) {
     console.error("Fetch failed (maybe running static without backend).", err);
@@ -115,13 +147,18 @@ async function fetchInitialData() {
 // ============================================================
 socket.on('order_added', (order) => {
   APP_DATA.orders.unshift(normalizeOrder(order));
-  if (isAdminLoggedIn) renderOrders();
+  if (isAdminLoggedIn) {
+    showToast(`New Order from ${order.customerName} (${order.id})!`, 'success', true);
+    renderOrders();
+  }
 });
 
 socket.on('order_updated', ({ orderId, status, waitTime }) => {
   const o = APP_DATA.orders.find(x => x.id === orderId);
   if (o) { o.status = status; if (waitTime !== undefined) o.waitTime = waitTime; }
   if (isAdminLoggedIn) renderOrders();
+  // Update customer pipeline if this is the customer's order
+  if (orderId === currentOrderId) updateOrderStatusPipeline(status);
 });
 
 socket.on('order_items_updated', ({ orderId, items }) => {
@@ -158,6 +195,28 @@ function showView(viewId) {
     if (el) el.classList.toggle('active', id === viewId);
   });
   window.scrollTo?.(0, 0);
+
+  if (viewId === 'viewCheckout') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isCustomerUrl = urlParams.get('customer') === '1';
+    
+    const pc = document.getElementById('paymentCard');
+    if (pc) pc.style.display = isCustomerUrl ? 'none' : 'block';
+    
+    const btn = document.getElementById('btnPlaceOrder');
+    if (isCustomerUrl && btn) btn.disabled = false;
+  }
+  
+  if (viewId === 'viewName') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isCustomerUrl = urlParams.get('customer') === '1';
+    const backBtn = document.getElementById('btnNameBack');
+    if (backBtn) backBtn.style.display = isCustomerUrl ? 'none' : 'block';
+  }
+
+  if (viewId === 'viewAdmin') {
+    if (isAdminLoggedIn) renderOrders();
+  }
 }
 
 // ============================================================
@@ -198,7 +257,15 @@ function newOrder() {
   cart = {};
   selectedPayment = null;
   document.getElementById('customerName').value = '';
-  showView('viewAdmin');
+  
+  const urlParams = new URLSearchParams(window.location.search);
+  const isCustomerUrl = urlParams.get('customer') === '1';
+
+  if (isCustomerUrl) {
+    showView('viewName');
+  } else {
+    showView('viewAdmin');
+  }
   updateCartBar();
 }
 
@@ -344,6 +411,15 @@ function selectPayment(type) {
 }
 
 function placeOrder() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isCustomerUrl = urlParams.get('customer') === '1';
+
+  if (isCustomerUrl) {
+    if (Object.keys(cart).length === 0) { showToast('Cart is empty!', 'error'); return; }
+    createOrder('unverified');
+    return;
+  }
+
   if (!selectedPayment) { showToast('Choose a payment method!', 'error'); return; }
   if (Object.keys(cart).length === 0) { showToast('Cart is empty!', 'error'); return; }
   if (selectedPayment === 'upi') { openUpiModal(); return; }
@@ -393,7 +469,7 @@ function createOrder(paymentMethod) {
     items,
     total,
     paymentMethod,
-    status: 'pending',
+    status: 'new',
     date: getTodayStr(),
     timestamp: Date.now(),
     waitTime: 0
@@ -405,9 +481,15 @@ function createOrder(paymentMethod) {
   // NOTE: Optimistic UI update removed to prevent duplicate orders
   // socket listener 'order_added' will handle adding it locally
 
+  currentOrderId = order.id;
   document.getElementById('confirmOrderId').textContent  = order.id;
   document.getElementById('confirmName').textContent     = order.customerName;
-  document.getElementById('confirmPayment').textContent  = paymentMethod === 'cash' ? '💵 Cash' : '📱 UPI';
+  let payText = '❓ TBD';
+  if (paymentMethod === 'cash') payText = '💵 Cash';
+  else if (paymentMethod === 'upi') payText = '📱 UPI';
+  else payText = '💳 Pay at Counter';
+  
+  document.getElementById('confirmPayment').textContent  = payText;
   document.getElementById('confirmTotal').textContent    = formatCurrency(total);
   
   const cw = document.getElementById('confirmWait');
@@ -417,6 +499,67 @@ function createOrder(paymentMethod) {
   cart = {};
   updateCartBar();
   showView('viewConfirm');
+  // Reset status pipeline to initial state
+  resetOrderStatusPipeline();
+}
+
+// ============================================================
+// ORDER STATUS PIPELINE (Customer View)
+// ============================================================
+function resetOrderStatusPipeline() {
+  const dots = ['pipeDotApprove', 'pipeDotCooking', 'pipeDotReady'];
+  const lines = ['pipeLineApprove', 'pipeLineCooking', 'pipeLineReady'];
+  dots.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.classList.remove('pipeline-dot--done', 'pipeline-dot--active'); }
+  });
+  lines.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('pipeline-line--active');
+  });
+  const titleEl = document.getElementById('confirmTitle');
+  if (titleEl) titleEl.textContent = 'ORDER PLACED!';
+  const subEl = document.getElementById('confirmSub');
+  if (subEl) subEl.textContent = 'We have received your order 🔥';
+  const iconEl = document.getElementById('confirmIcon');
+  if (iconEl) iconEl.textContent = '✅';
+}
+
+function updateOrderStatusPipeline(status) {
+  if (status === 'pending') {
+    // Admin verified → Cooking
+    const approveEl = document.getElementById('pipeDotApprove');
+    if (approveEl) { approveEl.classList.add('pipeline-dot--done'); approveEl.textContent = '✅'; }
+    document.getElementById('pipeLineApprove')?.classList.add('pipeline-line--active');
+    const cookEl = document.getElementById('pipeDotCooking');
+    if (cookEl) { cookEl.classList.add('pipeline-dot--active'); }
+    document.getElementById('pipeLineCooking')?.classList.add('pipeline-line--active');
+    // Update title
+    const titleEl = document.getElementById('confirmTitle');
+    if (titleEl) titleEl.textContent = 'COOKING NOW! 🍳';
+    const subEl = document.getElementById('confirmSub');
+    if (subEl) subEl.textContent = 'Admin approved your order – it\'s being cooked!';
+    showToast('Your order is being cooked! 🍳', 'success');
+  } else if (status === 'closed') {
+    // Order done → Ready
+    const approveEl = document.getElementById('pipeDotApprove');
+    if (approveEl) { approveEl.classList.add('pipeline-dot--done'); approveEl.textContent = '✅'; }
+    document.getElementById('pipeLineApprove')?.classList.add('pipeline-line--active');
+    const cookEl = document.getElementById('pipeDotCooking');
+    if (cookEl) { cookEl.classList.add('pipeline-dot--done'); cookEl.textContent = '✅'; }
+    document.getElementById('pipeLineCooking')?.classList.add('pipeline-line--active');
+    const readyEl = document.getElementById('pipeDotReady');
+    if (readyEl) { readyEl.classList.add('pipeline-dot--done', 'pipeline-dot--ready'); readyEl.textContent = '🎉'; }
+    document.getElementById('pipeLineReady')?.classList.add('pipeline-line--active');
+    // Update title
+    const titleEl = document.getElementById('confirmTitle');
+    if (titleEl) titleEl.textContent = 'ORDER READY! 🎉';
+    const subEl = document.getElementById('confirmSub');
+    if (subEl) subEl.textContent = 'Your food is ready – please collect!';
+    const iconEl = document.getElementById('confirmIcon');
+    if (iconEl) iconEl.textContent = '🎉';
+    showToast('🎉 Your order is READY! Please collect!', 'success', true);
+  }
 }
 
 // ============================================================
@@ -534,7 +677,8 @@ function showAdminTab(tab) {
 // ADMIN: ORDERS
 // ============================================================
 function renderOrders() {
-  const active = APP_DATA.orders.filter(o => o.status === 'pending').sort((a, b) => a.timestamp - b.timestamp);
+  // Include 'new' (unverified from QR scan) AND 'pending' (cooking) in active list
+  const active = APP_DATA.orders.filter(o => o.status === 'new' || o.status === 'pending').sort((a, b) => a.timestamp - b.timestamp);
   const closed = APP_DATA.orders.filter(o => o.status === 'closed').sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
 
   updateAdminStats(active, closed);
@@ -568,10 +712,22 @@ function buildOrderHtml(order, isClosed) {
     if (isClosed) return `<span class="order-item-tag ${i.delivered ? 'delivered' : ''}">${i.delivered ? '✅ ' : ''}${i.emoji} ${i.name} ×${i.qty}</span>`;
     return `<button class="order-item-tag ${i.delivered ? 'delivered' : ''}" onclick="toggleItemDelivery('${order.id}', ${idx})">${i.delivered ? '✅ ' : ''}${i.emoji} ${i.name} ×${i.qty}</button>`;
   }).join('');
-  const payBadge = order.paymentMethod === 'cash'
-    ? `<span class="badge badge--cash">💵 CASH</span>`
-    : `<span class="badge badge--upi">📱 UPI</span>`;
-  const actions = isClosed ? '' : `<button class="btn-primary btn-sm" onclick="closeOrder('${order.id}')">✅ DONE</button>`;
+  let payBadge = '';
+  if (order.paymentMethod === 'cash') payBadge = `<span class="badge badge--cash">💵 CASH</span>`;
+  else if (order.paymentMethod === 'upi') payBadge = `<span class="badge badge--upi">📱 UPI</span>`;
+  else payBadge = `<span class="badge" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2)">💳 AT COUNTER</span>`;
+  
+  let actions = '';
+  let statusBadge = '';
+  if (isClosed) {
+    statusBadge = `<span class="badge badge--done">✅ DONE</span>`;
+  } else if (order.status === 'new') {
+    statusBadge = `<span class="badge badge--new">⚠️ NEW</span>`;
+    actions = `<button class="btn-primary btn-sm" onclick="verifyOrder('${order.id}')" style="background:var(--secondary)">VERIFY & COOK</button>`;
+  } else {
+    statusBadge = `<span class="badge badge--pending">⏳ COOKING</span>`;
+    actions = `<button class="btn-primary btn-sm" onclick="closeOrder('${order.id}')">✅ DONE</button>`;
+  }
 
   const waitDisplay = isClosed 
     ? (order.waitTime !== undefined ? `<span class="order-wait">⏱ Wait: ${formatWaitTime(order.waitTime)}</span>` : '')
@@ -586,7 +742,7 @@ function buildOrderHtml(order, isClosed) {
         <span class="order-card__time">${formatTime(order.timestamp)}</span>
       </div>
       <div class="order-card__meta">
-        <span class="badge ${isClosed ? 'badge--done' : 'badge--pending'}">${isClosed ? '✅ DONE' : '⏳ PENDING'}</span>
+        ${statusBadge}
         ${payBadge}
       </div>
     </div>
@@ -599,6 +755,14 @@ function buildOrderHtml(order, isClosed) {
       ${actions}
     </div>
   </div>`;
+}
+
+function verifyOrder(orderId) {
+  socket.emit('update_order_status', { orderId, status: 'pending' });
+  const o = APP_DATA.orders.find(x => x.id === orderId);
+  if (o) o.status = 'pending';
+  showToast('Order moved to Cooking! 🍳', 'success');
+  renderOrders();
 }
 
 function updateAdminStats(active, closed) {
@@ -905,13 +1069,25 @@ function formatCurrency(amount) {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
-function showToast(msg, type = 'success') {
+function showToast(msg, type = 'success', persistent = false) {
   const toast = document.getElementById('toast');
   if (!toast) return;
-  toast.textContent = msg;
+  const dismiss = () => toast.classList.remove('toast--show');
+  if (persistent) {
+    toast.innerHTML = `<span>${msg}</span>`;
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'margin-left:12px; background:none; border:none; color:white; font-weight:bold; cursor:pointer; font-size:16px; line-height:1; opacity:0.8; padding:0 4px;';
+    closeBtn.addEventListener('click', dismiss);
+    toast.appendChild(closeBtn);
+  } else {
+    toast.textContent = msg;
+  }
   toast.className = `toast toast--${type} toast--show`;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => toast.classList.remove('toast--show'), 3200);
+  if (!persistent) {
+    toast._t = setTimeout(dismiss, 3200);
+  }
 }
 
 function cap(s) {
