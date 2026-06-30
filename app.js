@@ -3,7 +3,15 @@
  * Connects to Node.js backend via Fetch & WebSockets
  */
 
-const socket = io();
+const socket = io({
+  auth: (cb) => {
+    cb({ token: localStorage.getItem('r54_admin_token') });
+  }
+});
+
+socket.on("connect_error", (err) => {
+  console.log("Socket connection error:", err.message);
+});
 
 // ---- GLOBAL STATE ----
 let APP_DATA = {
@@ -46,7 +54,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Start UI
-  showView('viewLanding');
+  isAdminLoggedIn = localStorage.getItem('r54_admin_logged_in') === 'true';
+  if (isAdminLoggedIn) {
+    showView('viewAdmin');
+  } else {
+    showView('viewLogin');
+  }
+
   startAdminClock();
   startLiveTimers(); // Start the 1-second interval for all live timers
 
@@ -71,8 +85,11 @@ function normalizeOrder(o) {
 
 async function fetchInitialData() {
   try {
+    const headers = { 'Authorization': localStorage.getItem('r54_admin_token') };
     const [menuRes, ordersRes, settingsRes] = await Promise.all([
-      fetch('/api/menu'), fetch('/api/orders'), fetch('/api/settings')
+      fetch('/api/menu', { headers }), 
+      fetch('/api/orders', { headers }), 
+      fetch('/api/settings', { headers })
     ]);
     if (menuRes.ok) APP_DATA.menu = await menuRes.json();
     if (ordersRes.ok) {
@@ -101,9 +118,15 @@ socket.on('order_added', (order) => {
   if (isAdminLoggedIn) renderOrders();
 });
 
-socket.on('order_updated', ({ orderId, status }) => {
+socket.on('order_updated', ({ orderId, status, waitTime }) => {
   const o = APP_DATA.orders.find(x => x.id === orderId);
-  if (o) o.status = status;
+  if (o) { o.status = status; if (waitTime !== undefined) o.waitTime = waitTime; }
+  if (isAdminLoggedIn) renderOrders();
+});
+
+socket.on('order_items_updated', ({ orderId, items }) => {
+  const o = APP_DATA.orders.find(x => x.id === orderId);
+  if (o) o.items = items;
   if (isAdminLoggedIn) renderOrders();
 });
 
@@ -129,7 +152,7 @@ socket.on('menu_deleted', (itemId) => {
 // VIEW SYSTEM
 // ============================================================
 function showView(viewId) {
-  const views = ['viewLanding', 'viewMenu', 'viewCheckout', 'viewConfirm'];
+  const views = ['viewLogin', 'viewAdmin', 'viewName', 'viewMenu', 'viewCheckout', 'viewConfirm'];
   views.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('active', id === viewId);
@@ -165,12 +188,17 @@ function startOrder() {
   updateCartBar();
 }
 
+function showNameEntry() {
+  document.getElementById('customerName').value = '';
+  showView('viewName');
+}
+
 function newOrder() {
   customerName = '';
   cart = {};
   selectedPayment = null;
   document.getElementById('customerName').value = '';
-  showView('viewLanding');
+  showView('viewAdmin');
   updateCartBar();
 }
 
@@ -374,8 +402,8 @@ function createOrder(paymentMethod) {
   // Emit over socket
   socket.emit('new_order', order);
   
-  // Optimistic UI update
-  APP_DATA.orders.unshift(order);
+  // NOTE: Optimistic UI update removed to prevent duplicate orders
+  // socket listener 'order_added' will handle adding it locally
 
   document.getElementById('confirmOrderId').textContent  = order.id;
   document.getElementById('confirmName').textContent     = order.customerName;
@@ -424,61 +452,58 @@ function startLiveTimers() {
 // ============================================================
 // STAFF ACCESS (ADMIN)
 // ============================================================
-function handleLogoTap() {
-  logoTapCount++;
-  clearTimeout(logoTapTimer);
 
-  const hint = document.getElementById('staffTapHint');
-  if (hint && logoTapCount < 7) {
-    hint.textContent = `${7 - logoTapCount} more...`;
-  }
+async function adminLogin() {
+  const pass = document.getElementById('adminPass').value;
+  const errorEl = document.getElementById('loginError');
+  errorEl.classList.add('hidden');
+  errorEl.textContent = '';
 
-  if (logoTapCount >= 7) {
-    logoTapCount = 0;
-    if (hint) hint.textContent = '';
-    openStaffModal();
+  if (!pass) {
+    errorEl.textContent = 'Enter password';
+    errorEl.classList.remove('hidden');
     return;
   }
 
-  logoTapTimer = setTimeout(() => {
-    logoTapCount = 0;
-    if (hint) hint.textContent = '';
-  }, 4000);
-}
-
-function openStaffModal() {
-  document.getElementById('adminOverlay').classList.remove('hidden');
-  document.getElementById('adminLoginScreen').classList.remove('hidden');
-  document.getElementById('adminDashboard').classList.add('hidden');
-  document.getElementById('adminPass').value = '';
-  setTimeout(() => document.getElementById('adminPass').focus(), 200);
-}
-
-function closeAdminOverlay() {
-  document.getElementById('adminOverlay').classList.add('hidden');
-  isAdminLoggedIn = false;
-}
-
-function adminLogin() {
-  const pass = document.getElementById('adminPass').value;
-  if (!pass) { showToast('Enter password', 'error'); return; }
-
-  if (pass === APP_DATA.settings.adminPassword) {
-    isAdminLoggedIn = true;
-    document.getElementById('adminLoginScreen').classList.add('hidden');
-    document.getElementById('adminDashboard').classList.remove('hidden');
-    showAdminTab('active');
-    showToast('Welcome back! 🔥', 'success');
-  } else {
-    showToast('Wrong password!', 'error');
-    document.getElementById('adminPass').value = '';
-    document.getElementById('adminPass').focus();
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pass })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      isAdminLoggedIn = true;
+      localStorage.setItem('r54_admin_logged_in', 'true');
+      localStorage.setItem('r54_admin_token', data.token);
+      
+      socket.disconnect();
+      socket.connect(); // reconnect with token
+      
+      await fetchInitialData(); // Re-fetch data now that we have a token
+      
+      showView('viewAdmin');
+      showAdminTab('active');
+      showToast('Welcome back! 🔥', 'success');
+    } else {
+      errorEl.textContent = data.error || 'Incorrect Password';
+      errorEl.classList.remove('hidden');
+      document.getElementById('adminPass').value = '';
+      document.getElementById('adminPass').focus();
+    }
+  } catch (err) {
+    console.error("Login failed", err);
+    errorEl.textContent = 'Server Error';
+    errorEl.classList.remove('hidden');
   }
 }
 
-function exitAdminMode() {
+function logoutAdmin() {
   isAdminLoggedIn = false;
-  document.getElementById('adminOverlay').classList.add('hidden');
+  localStorage.removeItem('r54_admin_logged_in');
+  localStorage.removeItem('r54_admin_token');
+  socket.disconnect();
+  showView('viewLogin');
 }
 
 function showAdminTab(tab) {
@@ -539,11 +564,18 @@ function renderOrders() {
 }
 
 function buildOrderHtml(order, isClosed) {
-  const itemTags = order.items.map(i => `<span class="order-item-tag">${i.emoji} ${i.name} ×${i.qty}</span>`).join('');
+  const itemTags = order.items.map((i, idx) => {
+    if (isClosed) return `<span class="order-item-tag ${i.delivered ? 'delivered' : ''}">${i.delivered ? '✅ ' : ''}${i.emoji} ${i.name} ×${i.qty}</span>`;
+    return `<button class="order-item-tag ${i.delivered ? 'delivered' : ''}" onclick="toggleItemDelivery('${order.id}', ${idx})">${i.delivered ? '✅ ' : ''}${i.emoji} ${i.name} ×${i.qty}</button>`;
+  }).join('');
   const payBadge = order.paymentMethod === 'cash'
     ? `<span class="badge badge--cash">💵 CASH</span>`
     : `<span class="badge badge--upi">📱 UPI</span>`;
   const actions = isClosed ? '' : `<button class="btn-primary btn-sm" onclick="closeOrder('${order.id}')">✅ DONE</button>`;
+
+  const waitDisplay = isClosed 
+    ? (order.waitTime !== undefined ? `<span class="order-wait">⏱ Wait: ${formatWaitTime(order.waitTime)}</span>` : '')
+    : `<span class="order-wait">⏱ <span class="live-timer-display" data-time="${order.timestamp}">00:00</span></span>`;
 
   return `
   <div class="order-card order-card--${isClosed ? 'closed' : 'pending'}">
@@ -562,7 +594,7 @@ function buildOrderHtml(order, isClosed) {
     <div class="order-card__footer">
       <div>
         <span class="order-total">${formatCurrency(order.total)}</span>
-        ${!isClosed ? `<span class="order-wait">⏱ <span class="live-timer-display" data-time="${order.timestamp}">00:00</span></span>` : ''}
+        ${waitDisplay}
       </div>
       ${actions}
     </div>
@@ -584,16 +616,30 @@ function updateAdminStats(active, closed) {
   if (elRev) elRev.textContent = formatCurrency(revenue);
 }
 
-function closeOrder(orderId) {
-  // Emit to server
-  socket.emit('update_order_status', { orderId, status: 'closed' });
-  
-  // Optimistic update in local state
+function toggleItemDelivery(orderId, idx) {
   const o = APP_DATA.orders.find(x => x.id === orderId);
-  if (o) o.status = 'closed';
+  if (!o) return;
+  o.items[idx].delivered = !o.items[idx].delivered;
+  socket.emit('update_order_items', { orderId, items: o.items });
+  
+  if (o.items.every(i => i.delivered)) {
+    closeOrder(orderId);
+  } else {
+    renderOrders();
+  }
+}
+
+function closeOrder(orderId) {
+  const o = APP_DATA.orders.find(x => x.id === orderId);
+  if (!o) return;
+  
+  const waitTime = Math.floor((Date.now() - o.timestamp) / 1000);
+  socket.emit('update_order_status', { orderId, status: 'closed', waitTime });
+  
+  o.status = 'closed';
+  o.waitTime = waitTime;
   
   showToast('Order closed! ✅ Check Closed tab', 'success');
-  // Re-render active tab to remove it, keeping current tab
   renderOrders();
 }
 
@@ -723,15 +769,27 @@ function generateReport() {
   if (listEl) {
     listEl.innerHTML = orders.length === 0
       ? `<p class="empty-hint">No closed orders for ${dateStr}.</p>`
-      : orders.map(o => `
-        <div class="report-order-row">
-          <span class="report-order-id">${o.id}</span>
+      : orders.map(o => {
+          const waitStr = o.waitTime !== undefined ? `<span style="font-size:11px;color:var(--text-muted)">⏱ ${formatWaitTime(o.waitTime)}</span>` : '';
+          return `
+        <div class="report-order-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; flex-direction:column;">
+            <span class="report-order-id">${o.id}</span>
+            ${waitStr}
+          </div>
           <span class="report-order-name">${escHtml(o.customerName)}</span>
           <span class="report-order-pay">${o.paymentMethod === 'cash' ? '💵' : '📱'}</span>
           <span class="report-order-total">${formatCurrency(Number(o.total))}</span>
-        </div>`
-      ).join('');
+        </div>`;
+      }).join('');
   }
+}
+
+function formatWaitTime(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
 }
 
 function downloadReport() {
@@ -742,13 +800,14 @@ function downloadReport() {
 
   const rows = [
     [`Route 54 Bistro – Sales Report – ${dateStr}`], [],
-    ['Order ID', 'Customer', 'Items', 'Total (₹)', 'Payment', 'Time'],
+    ['Order ID', 'Customer', 'Items', 'Total (₹)', 'Payment', 'Time', 'Wait Time'],
     ...orders.map(o => [
       o.id, o.customerName,
       o.items.map(i => `${i.name} x${i.qty}`).join(' | '),
-      o.total, o.paymentMethod, formatTime(o.timestamp)
+      o.total, o.paymentMethod, formatTime(o.timestamp),
+      o.waitTime !== undefined ? formatWaitTime(o.waitTime) : '-'
     ]),
-    [], ['', '', 'TOTAL', orders.reduce((s, o) => s + o.total, 0), '', ''],
+    [], ['', '', 'TOTAL', orders.reduce((s, o) => s + o.total, 0), '', '', ''],
   ];
 
   const csv  = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');

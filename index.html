@@ -23,64 +23,50 @@
   <div class="bg-glow bg-glow--red" aria-hidden="true"></div>
 
   <!-- ============================================================
-       VIEW: LANDING (no-scroll, fits 100dvh)
+       VIEW: ADMIN LOGIN
        ============================================================ -->
-  <div class="view view--landing active" id="viewLanding">
-
-    <!-- Header -->
-    <header class="app-header" role="banner">
-      <div class="app-header__inner">
-        <!-- Logo: tap 7 times to access staff mode -->
-        <div class="logo-badge" id="logoTapTarget" onclick="handleLogoTap()" role="button" tabindex="0" aria-label="Route 54 Bistro">
-          <img src="logo-app.png" alt="R54 Logo" class="logo-img" />
-        </div>
-        <div class="brand-name-wrap">
-          <span class="brand-name">ROUTE <span class="brand-54">54</span></span>
-          <span class="brand-sub">BISTRO</span>
-        </div>
-        <div class="header-status">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span class="status-txt">OPEN</span>
-        </div>
-      </div>
-    </header>
-
-    <div class="landing-body">
-      <!-- Hero Image: Neon Sign as full background -->
-      <div class="hero-section" role="img" aria-label="Route 54 Bistro Neon Sign">
-        <img src="hero-bg.png" alt="Route 54 neon sign" class="hero-img" />
-        <div class="hero-overlay"></div>
-        <p class="hero-tagline">STREET FOOD THAT HITS DIFFERENT 🔥</p>
-      </div>
-
-      <div class="landing-forms">
-        <!-- Name Entry Card -->
-        <div class="landing-card">
-          <label class="field-label" for="customerName">YOUR NAME</label>
-          <input
-            type="text"
-            id="customerName"
-            class="neon-input landing-input"
-            placeholder="Type your name..."
-            autocomplete="given-name"
-            aria-required="true"
-            maxlength="50"
-          />
-          <button class="btn-primary btn-full btn-xl" id="btnStartOrder" onclick="startOrder()">
-            START ORDERING →
-          </button>
-        </div>
-
-
-
-        <!-- Explicit Admin Login Button -->
-        <div class="landing-footer">
-          <button class="btn-ghost" onclick="openStaffModal()">👨‍🍳 ADMIN LOGIN</button>
-        </div>
+  <div class="view view--login active" id="viewLogin">
+    <div class="admin-login-screen">
+      <div class="admin-login-inner">
+        <img src="logo-app.png" alt="R54 Bistro" class="admin-login-logo" />
+        <h2 class="admin-login-title">STAFF LOGIN</h2>
+        <p class="admin-login-sub">Route 54 Bistro Admin Panel</p>
+        <label class="field-label" for="adminPass">PASSWORD</label>
+        <input type="password" id="adminPass" class="neon-input" placeholder="••••••••" autocomplete="current-password" />
+        <button class="btn-primary btn-full btn-xl" onclick="adminLogin()" style="margin-top:12px">LOGIN →</button>
+        <p id="loginError" class="neon-red hidden" style="font-size: 14px; margin-top: 10px; text-align: center; font-weight: bold;"></p>
       </div>
     </div>
+  </div><!-- /view--login -->
 
-  </div><!-- /view--landing -->
+  <!-- ============================================================
+       VIEW: NAME ENTRY
+       ============================================================ -->
+  <div class="view view--name" id="viewName">
+    <header class="app-header" role="banner">
+      <div class="app-header__inner">
+        <button class="btn-back-icon" onclick="showView('viewAdmin')" aria-label="Back">←</button>
+        <span class="view-title">NEW ORDER</span>
+        <div style="width:40px"></div>
+      </div>
+    </header>
+    <div class="landing-body" style="justify-content: center; align-items: center; padding: 20px;">
+      <div class="landing-card" style="width: 100%; max-width: 400px; padding: 24px; border-radius: var(--r-xl);">
+        <h2 class="modal-title neon-text" style="font-size: 28px; text-align: center; margin-bottom: 20px;">CUSTOMER NAME</h2>
+        <input
+          type="text"
+          id="customerName"
+          class="neon-input landing-input"
+          placeholder="Enter customer name..."
+          autocomplete="off"
+          maxlength="50"
+        />
+        <button class="btn-primary btn-full btn-xl" id="btnStartOrder" onclick="startOrder()" style="margin-top: 10px;">
+          PROCEED TO MENU →
+        </button>
+      </div>
+    </div>
+  </div><!-- /view--name -->
 
 
   <!-- ============================================================
@@ -230,34 +216,21 @@
 
 
   <!-- ============================================================
-       ADMIN PANEL (full-screen overlay, same page!)
+       VIEW: ADMIN DASHBOARD
        ============================================================ -->
-  <div class="admin-overlay hidden" id="adminOverlay" role="dialog" aria-modal="true">
-
-    <!-- Admin Login -->
-    <div class="admin-login-screen" id="adminLoginScreen">
-      <div class="admin-login-inner">
-        <img src="logo-bold.png" alt="R54 Bistro" class="admin-login-logo" />
-        <h2 class="admin-login-title">STAFF LOGIN</h2>
-        <p class="admin-login-sub">Route 54 Bistro Admin Panel</p>
-        <label class="field-label" for="adminPass">PASSWORD</label>
-        <input type="password" id="adminPass" class="neon-input" placeholder="••••••••" autocomplete="current-password" />
-        <button class="btn-primary btn-full btn-xl" onclick="adminLogin()" style="margin-top:12px">LOGIN →</button>
-        <button class="btn-ghost" onclick="closeAdminOverlay()" style="margin-top:10px; width:100%">✕ BACK TO ORDERING</button>
-      </div>
-    </div>
+  <div class="view view--admin" id="viewAdmin">
 
     <!-- Admin Dashboard -->
-    <div class="admin-dashboard hidden" id="adminDashboard">
+    <div class="admin-dashboard" id="adminDashboard" style="height: 100%; display: flex; flex-direction: column;">
 
       <header class="admin-header">
         <div class="admin-header__inner" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
           <div class="admin-brand" style="display: flex; align-items: center; gap: 8px;">
-            <img src="logo-bold.png" alt="R54" class="logo-img logo-img--sm" style="width: 32px; height: 32px; border-radius: 8px;" />
+            <img src="logo-app.png" alt="R54" class="logo-img logo-img--sm" style="width: 32px; height: 32px; border-radius: 8px;" />
             <span class="admin-brand-name" style="font-family: 'Bebas Neue'; font-size: 24px;">ADMIN</span>
           </div>
-          <div class="admin-clock" id="adminClock" style="font-family: 'Space Mono'; color: var(--text-muted); font-size: 14px;"></div>
-          <button class="btn-exit-admin" onclick="exitAdminMode()" aria-label="Exit admin" style="background: none; border: 1px solid var(--primary); color: var(--text-light); padding: 4px 12px; border-radius: 20px; font-size: 12px;">✕ EXIT</button>
+          <button class="btn-primary btn-sm" onclick="showNameEntry()" style="margin: 0 10px;">+ NEW ORDER</button>
+          <button class="btn-exit-admin" onclick="logoutAdmin()" aria-label="Logout" style="background: none; border: 1px solid var(--primary); color: var(--text); padding: 4px 12px; border-radius: 20px; font-size: 12px;">LOGOUT</button>
         </div>
       </header>
 
@@ -285,21 +258,18 @@
         <div class="admin-tab" id="tabActive">
           <div class="stats-row">
             <div class="stat-card glass-card">
-              <span class="stat-icon">⏳</span>
               <div class="stat-info">
                 <span class="stat-num neon-text" id="statPending">0</span>
                 <span class="stat-lbl">PENDING</span>
               </div>
             </div>
             <div class="stat-card glass-card">
-              <span class="stat-icon">✅</span>
               <div class="stat-info">
                 <span class="stat-num neon-green" id="statDone">0</span>
                 <span class="stat-lbl">DONE TODAY</span>
               </div>
             </div>
             <div class="stat-card glass-card">
-              <span class="stat-icon">💰</span>
               <div class="stat-info">
                 <span class="stat-num neon-text" id="statRevenue">₹0</span>
                 <span class="stat-lbl">TODAY'S REVENUE</span>
@@ -374,8 +344,8 @@
                 <input type="date" id="reportDate" class="neon-input" />
               </div>
               <div class="form-group form-group--actions">
-                <button class="btn-primary" onclick="generateReport()">VIEW REPORT</button>
-                <button class="btn-secondary" onclick="downloadReport()">⬇ CSV</button>
+                <button class="btn-primary btn-xs" onclick="generateReport()">VIEW REPORT</button>
+                <button class="btn-secondary btn-xs" onclick="downloadReport()">⬇ CSV</button>
               </div>
             </div>
           </div>
@@ -466,10 +436,8 @@
 
         </div><!-- /tabSettings -->
 
-      </div><!-- /admin-content -->
     </div><!-- /adminDashboard -->
-
-  </div><!-- /admin-overlay -->
+  </div><!-- /view--admin -->
 
 
   <!-- UPI QR MODAL -->
