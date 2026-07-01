@@ -40,6 +40,28 @@ document.addEventListener('click',      () => _getAudioCtx(), { once: true });
 document.addEventListener('touchstart', () => _getAudioCtx(), { once: true });
 
 /**
+ * Keep the AudioContext alive by scheduling a silent oscillator every 20s.
+ * Without this, browsers suspend it after ~10 min of inactivity.
+ */
+function _keepAudioContextAlive() {
+  try {
+    const ctx = _getAudioCtx();
+    // Resume if suspended (e.g. after long inactivity)
+    if (ctx.state === 'suspended') ctx.resume();
+    // Schedule a silent 0-gain node to prevent suspension
+    const silent = ctx.createOscillator();
+    const silentGain = ctx.createGain();
+    silentGain.gain.setValueAtTime(0, ctx.currentTime);
+    silent.connect(silentGain);
+    silentGain.connect(ctx.destination);
+    silent.start(ctx.currentTime);
+    silent.stop(ctx.currentTime + 0.001);
+  } catch (e) { /* ignore */ }
+}
+// Ping every 20 seconds to prevent AudioContext suspension
+setInterval(_keepAudioContextAlive, 20000);
+
+/**
  * Plays an ascending 3-note chime (E5 → G#5 → B5) for new QR orders.
 /**
  * Plays a LOUD ascending 3-note chime that repeats for ~5 seconds.
@@ -48,6 +70,8 @@ document.addEventListener('touchstart', () => _getAudioCtx(), { once: true });
 function playOrderAlert() {
   try {
     const ctx  = _getAudioCtx();
+    // Always resume first — critical after inactivity
+    if (ctx.state === 'suspended') ctx.resume();
     const now  = ctx.currentTime;
 
     const notes      = [659.25, 830.61, 987.77]; // E5, G#5, B5
@@ -311,12 +335,21 @@ async function fetchInitialData(isCustomerUrl) {
 // ============================================================
 socket.on('order_added', (order) => {
   APP_DATA.orders.unshift(normalizeOrder(order));
+
+  // If this is the customer's own order coming back with the real server-assigned ID,
+  // update currentOrderId and the confirmation display
+  if (currentOrderId === 'PENDING' && order.status === 'new') {
+    currentOrderId = order.id;
+    const confirmIdEl = document.getElementById('confirmOrderId');
+    if (confirmIdEl) confirmIdEl.textContent = '#' + order.id;
+  }
+
   if (isAdminLoggedIn) {
     // Play chime only for QR-placed orders (status 'new'), not admin-placed ones
     if (order.status === 'new') {
       playOrderAlert();
     }
-    showToast(`🛎️ New Order from ${order.customerName}!`, 'success', true);
+    showToast(`🛎️ New Order #${order.id} from ${order.customerName}!`, 'success', true);
     renderOrders();
   }
 });
@@ -632,7 +665,7 @@ function createOrder(paymentMethod) {
   const total = items.reduce((s, i) => s + i.price * i.qty, 0);
   
   const order = {
-    id: 'R' + (Math.floor(Math.random() * 900) + 100),
+    id: 'PENDING',  // Server will assign the real sequential ID
     customerName,
     items,
     total,
@@ -649,10 +682,11 @@ function createOrder(paymentMethod) {
   // NOTE: Optimistic UI update removed to prevent duplicate orders
   // socket listener 'order_added' will handle adding it locally
 
-  currentOrderId = order.id;
+  currentOrderId = 'PENDING';  // Server will replace with real sequential ID
   // Lock tab so customer can't accidentally close while tracking order
   lockTabForOrderTracking();
-  document.getElementById('confirmOrderId').textContent  = order.id;
+  document.getElementById('confirmOrderId').textContent  = '...';  // Updated when server responds
+
   document.getElementById('confirmName').textContent     = order.customerName;
   let payText = '❓ TBD';
   if (paymentMethod === 'cash') payText = '💵 Cash';
@@ -849,34 +883,49 @@ function showAdminTab(tab) {
 // ADMIN: ORDERS
 // ============================================================
 function renderOrders() {
-  // Include 'new' (unverified from QR scan) AND 'pending' (cooking) in active list
-  const active = APP_DATA.orders.filter(o => o.status === 'new' || o.status === 'pending').sort((a, b) => a.timestamp - b.timestamp);
-  const closed = APP_DATA.orders.filter(o => o.status === 'closed').sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
+  // Active: 'new' (QR unverified) + 'pending' (cooking)
+  // Sort ascending by sequential number (or timestamp) = FIFO queue, #001 first
+  const active = APP_DATA.orders
+    .filter(o => o.status === 'new' || o.status === 'pending')
+    .sort((a, b) => {
+      const na = parseInt(a.id) || 0;
+      const nb = parseInt(b.id) || 0;
+      return na !== nb ? na - nb : a.timestamp - b.timestamp;
+    });
+
+  // Closed: most recent first
+  const closed = APP_DATA.orders
+    .filter(o => o.status === 'closed')
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 50);
 
   updateAdminStats(active, closed);
 
-  // Active
+  // Active list
   const activeContainer = document.getElementById('activeOrdersList');
   if (activeContainer) {
-    if (active.length === 0) {
-      activeContainer.innerHTML = `<div class="empty-state"><span class="empty-icon">🕐</span><p>No active orders.</p></div>`;
-    } else {
-      activeContainer.innerHTML = active.map(o => buildOrderHtml(o, false)).join('');
-    }
+    activeContainer.innerHTML = active.length === 0
+      ? `<div class="empty-state"><span class="empty-icon">🕐</span><p>No active orders.</p></div>`
+      : active.map(o => buildOrderHtml(o, false)).join('');
   }
 
-  // Closed
+  // Closed list
   const closedContainer = document.getElementById('closedOrdersList');
   if (closedContainer) {
-    if (closed.length === 0) {
-      closedContainer.innerHTML = `<div class="empty-state"><span class="empty-icon">📦</span><p>No closed orders yet.</p></div>`;
-    } else {
-      closedContainer.innerHTML = closed.map(o => buildOrderHtml(o, true)).join('');
-    }
+    closedContainer.innerHTML = closed.length === 0
+      ? `<div class="empty-state"><span class="empty-icon">📦</span><p>No closed orders yet.</p></div>`
+      : closed.map(o => buildOrderHtml(o, true)).join('');
   }
 
+  // Update badges
   document.getElementById('activeOrderCount').textContent = active.length;
-  document.getElementById('pendingBadge').textContent = active.length;
+  document.getElementById('pendingBadge').textContent     = active.length;
+
+  // Closed count badge (nav button + section header)
+  const closedBadgeEl   = document.getElementById('closedBadge');
+  const closedCountEl   = document.getElementById('closedOrderCount');
+  if (closedBadgeEl) closedBadgeEl.textContent = closed.length;
+  if (closedCountEl) closedCountEl.textContent = closed.length;
 }
 
 function buildOrderHtml(order, isClosed) {
@@ -909,7 +958,7 @@ function buildOrderHtml(order, isClosed) {
   <div class="order-card order-card--${isClosed ? 'closed' : 'pending'}">
     <div class="order-card__header">
       <div class="order-card__id-wrap">
-        <span class="order-card__id">${order.id}</span>
+        <span class="order-card__id">#${order.id}</span>
         <span class="order-card__customer">${escHtml(order.customerName)}</span>
         <span class="order-card__time">${formatTime(order.timestamp)}</span>
       </div>

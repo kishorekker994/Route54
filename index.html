@@ -282,7 +282,7 @@
           ⏳ ACTIVE <span class="nav-badge" id="pendingBadge">0</span>
         </button>
         <button class="admin-nav-btn" id="anbClosed" onclick="showAdminTab('closed')" aria-pressed="false">
-          ✅ CLOSED
+          ✅ CLOSED <span class="nav-badge" id="closedBadge">0</span>
         </button>
         <button class="admin-nav-btn" id="anbMenu" onclick="showAdminTab('menu')" aria-pressed="false">
           🍽️ MENU
@@ -328,7 +328,7 @@
 
         <!-- CLOSED ORDERS TAB -->
         <div class="admin-tab hidden" id="tabClosed">
-          <div class="orders-section-label neon-red">CLOSED ORDERS</div>
+          <div class="orders-section-label neon-red">CLOSED ORDERS <span class="section-badge" id="closedOrderCount">0</span></div>
           <div class="orders-list" id="closedOrdersList">
             <div class="empty-state"><span class="empty-icon">📦</span><p>No closed orders yet.</p></div>
           </div>

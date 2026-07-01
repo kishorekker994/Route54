@@ -28,6 +28,14 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'route54-admin-static-token';
 let localMenu = [];
 let localOrders = [];
 let localSettings = { truckName: 'Route 54 Bistro', upiId: '' };
+let orderCounter      = 0;       // Sequential order counter (persistent via DB)
+let orderCounterMonth = '';      // YYYY-MM of the month the counter belongs to
+
+/** Returns current month as 'YYYY-MM' */
+function getYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 const defaultMenu = [
   { id: 'v1', name: 'Veg Burger', emoji: '🍔', price: 100, category: 'veg', available: true },
@@ -42,6 +50,8 @@ async function initDB() {
   if (!process.env.DATABASE_URL) {
     console.warn("No DATABASE_URL provided. Using in-memory fallback.");
     localMenu = [...defaultMenu];
+    orderCounter      = 0;
+    orderCounterMonth = getYearMonth();
     return;
   }
   try {
@@ -49,14 +59,33 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS menu (id VARCHAR(50) PRIMARY KEY, name VARCHAR(100), emoji VARCHAR(10), price INTEGER, category VARCHAR(50), available BOOLEAN);
       CREATE TABLE IF NOT EXISTS orders (id VARCHAR(50) PRIMARY KEY, customer_name VARCHAR(100), items JSONB, total INTEGER, payment_method VARCHAR(50), status VARCHAR(50), date VARCHAR(20), timestamp BIGINT, wait_time INTEGER);
       CREATE TABLE IF NOT EXISTS settings (key VARCHAR(50) PRIMARY KEY, value JSONB);
+      CREATE TABLE IF NOT EXISTS counters (key VARCHAR(50) PRIMARY KEY, value TEXT DEFAULT '0');
     `);
+    // Initialize order counter from DB
+    await pool.query("INSERT INTO counters (key, value) VALUES ('order_seq', '0') ON CONFLICT (key) DO NOTHING");
+    await pool.query("INSERT INTO counters (key, value) VALUES ('order_month', $1) ON CONFLICT (key) DO NOTHING", [getYearMonth()]);
+
+    const cRes = await pool.query("SELECT value FROM counters WHERE key = 'order_seq'");
+    const mRes = await pool.query("SELECT value FROM counters WHERE key = 'order_month'");
+    orderCounter      = parseInt(cRes.rows[0]?.value ?? '0', 10);
+    orderCounterMonth = mRes.rows[0]?.value ?? getYearMonth();
+
+    // If the stored month is in the past, reset the counter now
+    if (orderCounterMonth !== getYearMonth()) {
+      orderCounter      = 0;
+      orderCounterMonth = getYearMonth();
+      await pool.query("UPDATE counters SET value = '0' WHERE key = 'order_seq'");
+      await pool.query("UPDATE counters SET value = $1  WHERE key = 'order_month'", [orderCounterMonth]);
+      console.log('[Route54] New month detected on startup — order counter reset to 0.');
+    }
+
     const res = await pool.query('SELECT count(*) FROM menu');
     if (parseInt(res.rows[0].count) === 0) {
       for (const item of defaultMenu) {
         await pool.query('INSERT INTO menu (id, name, emoji, price, category, available) VALUES ($1, $2, $3, $4, $5, $6)', [item.id, item.name, item.emoji, item.price, item.category, item.available]);
       }
     }
-    console.log("Database initialized successfully.");
+    console.log(`Database initialized. Order counter: ${orderCounter} (Month: ${orderCounterMonth})`);
   } catch (err) {
     console.error("Database initialization failed:", err);
   }
@@ -115,16 +144,35 @@ io.on('connection', (socket) => {
   console.log('A client connected');
   
   socket.on('new_order', async (order) => {
-    console.log(`[Socket] Received new_order: ${order.id} (Status: ${order.status}, Customer: ${order.customerName})`);
+    // ── Monthly reset: if month changed, start from #001 again ──
+    const thisMonth = getYearMonth();
+    if (thisMonth !== orderCounterMonth) {
+      orderCounter      = 0;
+      orderCounterMonth = thisMonth;
+      console.log(`[Route54] New month (${thisMonth}) — order counter reset to 0.`);
+      if (process.env.DATABASE_URL) {
+        await pool.query("UPDATE counters SET value = '0' WHERE key = 'order_seq'").catch(() => {});
+        await pool.query("UPDATE counters SET value = $1  WHERE key = 'order_month'", [thisMonth]).catch(() => {});
+      }
+    }
+
+    // Assign sequential order number server-side
+    orderCounter += 1;
+    const seqId = String(orderCounter).padStart(3, '0');  // 001, 002, ...
+    order.id = seqId;
+    order.seqNum = orderCounter;
+    console.log(`[Socket] Received new_order: #${order.id} (Customer: ${order.customerName}, Month: ${orderCounterMonth})`);
     if (process.env.DATABASE_URL) {
       try {
+        // Persist updated counter
+        await pool.query("UPDATE counters SET value = $1 WHERE key = 'order_seq'", [String(orderCounter)]);
         await pool.query('INSERT INTO orders (id, customer_name, items, total, payment_method, status, date, timestamp, wait_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
           [order.id, order.customerName, JSON.stringify(order.items), order.total, order.paymentMethod, order.status, order.date, order.timestamp, order.waitTime]);
       } catch (err) { console.error("Failed to save order", err); }
     } else {
       localOrders.unshift(order);
     }
-    console.log(`[Socket] Broadcasting order_added: ${order.id}`);
+    console.log(`[Socket] Broadcasting order_added: #${order.id}`);
     io.emit('order_added', order);
   });
 
