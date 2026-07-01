@@ -47,7 +47,7 @@
       <div class="app-header__inner">
         <button class="btn-back-icon" id="btnNameBack" onclick="showView('viewAdmin')" aria-label="Back">←</button>
         <span class="view-title">NEW ORDER</span>
-        <div style="width:40px"></div>
+        <button class="btn-primary btn-xs" id="btnNameHome" onclick="showView('viewAdmin')" style="display:none; margin-left:auto;">🏠 HOME</button>
       </div>
     </header>
     <div class="landing-body" style="justify-content: center; align-items: center; padding: 20px;">
@@ -86,6 +86,7 @@
         <div class="greeting-chip">
           Hey <strong id="greetName"></strong>! 👋
         </div>
+        <button class="btn-primary btn-xs" id="btnMenuHome" onclick="showView('viewAdmin')" style="display:none; margin-left:10px;">🏠 HOME</button>
       </div>
     </header>
 
@@ -99,10 +100,15 @@
       </button>
     </div>
 
+    <!-- Search Bar -->
+    <div style="padding: 0 16px 10px;">
+      <input type="text" id="menuSearch" class="neon-input" placeholder="Search menu..." oninput="filterMenu()" />
+    </div>
+
     <!-- Scrollable Menu Grid -->
     <div class="menu-scroll-area">
-      <div class="menu-grid" id="menuVeg" role="tabpanel"></div>
-      <div class="menu-grid hidden" id="menuNonveg" role="tabpanel"></div>
+      <div id="menuVeg" role="tabpanel" style="padding: 0 16px 120px;"></div>
+      <div id="menuNonveg" role="tabpanel" class="hidden" style="padding: 0 16px 120px;"></div>
     </div>
 
 
@@ -131,7 +137,7 @@
       <div class="app-header__inner">
         <button class="btn-back-icon" onclick="showView('viewMenu')" aria-label="Back">←</button>
         <span class="view-title">YOUR ORDER</span>
-        <div style="width:40px"></div>
+        <button class="btn-primary btn-xs" id="btnCheckoutHome" onclick="showView('viewAdmin')" style="display:none; margin-left:auto;">🏠 HOME</button>
       </div>
     </header>
 
@@ -237,7 +243,8 @@
         </div>
       </div>
 
-      <button class="btn-primary btn-xl" onclick="newOrder()">ORDER AGAIN 🍔</button>
+      <button class="btn-primary btn-xl" onclick="newOrder()" style="margin-bottom: 12px;">ORDER AGAIN 🍔</button>
+      <button class="btn-primary btn-xl" id="btnEnableNotifications" onclick="enablePushNotifications()" style="background:var(--primary); font-size: 16px; margin-bottom: 24px;">🔔 GET NOTIFIED</button>
 
       <!-- Stay-on-page sticky banner (shown when order is active) -->
       <div class="stay-banner" id="stayBanner" style="display:none">
@@ -276,6 +283,11 @@
           <button class="btn-exit-admin" onclick="logoutAdmin()" aria-label="Logout" style="background: none; border: 1px solid var(--primary); color: var(--text); padding: 4px 12px; border-radius: 20px; font-size: 12px;">LOGOUT</button>
         </div>
       </header>
+
+      <!-- One-time sound unlock banner -->
+      <div id="soundUnlockBanner" style="display:none; background:rgba(255,107,53,0.15); border:1px solid rgba(255,107,53,0.4); border-radius:10px; margin:8px 12px 0; padding:10px 14px; font-size:13px; color:rgba(255,255,255,0.85); text-align:center; cursor:pointer;" onclick="unlockAudioAndHide()">
+        🔔 Tap here to enable order alert sounds
+      </div>
 
       <nav class="admin-nav" role="navigation" style="z-index: 10;">
         <button class="admin-nav-btn active" id="anbActive" onclick="showAdminTab('active')" aria-pressed="true">
@@ -351,13 +363,18 @@
                 <label class="field-label" for="newItemEmoji">EMOJI</label>
                 <input type="text" id="newItemEmoji" class="neon-input" placeholder="🍔" maxlength="4" />
                 <!-- Emoji Presets -->
-                <div class="emoji-presets" style="display:flex; gap:8px; margin-top:8px; font-size:24px; cursor:pointer;">
+                <div class="emoji-bar" style="display:flex; gap:8px; margin-top:8px; font-size:24px; cursor:pointer; flex-wrap:wrap;">
                   <span onclick="document.getElementById('newItemEmoji').value='🍔'">🍔</span>
                   <span onclick="document.getElementById('newItemEmoji').value='🍟'">🍟</span>
                   <span onclick="document.getElementById('newItemEmoji').value='🍕'">🍕</span>
                   <span onclick="document.getElementById('newItemEmoji').value='🌯'">🌯</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🌮'">🌮</span>
                   <span onclick="document.getElementById('newItemEmoji').value='🥪'">🥪</span>
                   <span onclick="document.getElementById('newItemEmoji').value='🍗'">🍗</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🍖'">🍖</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🥔'">🥔</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🥗'">🥗</span>
+                  <span onclick="document.getElementById('newItemEmoji').value='🍨'">🍨</span>
                   <span onclick="document.getElementById('newItemEmoji').value='🥤'">🥤</span>
                 </div>
               </div>
@@ -366,6 +383,23 @@
                 <select id="newItemCategory" class="neon-input neon-select">
                   <option value="veg">VEG</option>
                   <option value="nonveg">NON-VEG</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="field-label" for="newItemSubCategory">SUB CATEGORY</label>
+                <select id="newItemSubCategory" class="neon-input neon-select">
+                  <option value="Burgers 🍔">Burgers 🍔</option>
+                  <option value="Wraps 🌯">Wraps 🌯</option>
+                  <option value="Fries 🍟">Fries 🍟</option>
+                  <option value="Fried Chicken 🍗">Fried Chicken 🍗</option>
+                  <option value="BBQ 🍖">BBQ 🍖</option>
+                  <option value="Chips 🥔">Chips 🥔</option>
+                  <option value="Pizza 🍕">Pizza 🍕</option>
+                  <option value="Tacos 🌮">Tacos 🌮</option>
+                  <option value="Salads 🥗">Salads 🥗</option>
+                  <option value="Desserts 🍨">Desserts 🍨</option>
+                  <option value="Drinks 🥤">Drinks 🥤</option>
+                  <option value="Others 🍽️">Others 🍽️</option>
                 </select>
               </div>
             </div>
@@ -504,6 +538,21 @@
 
   <!-- TOAST -->
   <div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+  <!-- Reject Reason Modal -->
+  <div class="modal-backdrop hidden" id="rejectModal" role="dialog" aria-modal="true">
+    <div class="modal-box glass-card">
+      <button class="modal-close" onclick="closeRejectModal()">✕</button>
+      <h2 class="modal-title" style="color:var(--secondary)">❌ REJECT ORDER</h2>
+      <p style="margin-bottom:14px; opacity:0.75; font-size:14px;">Provide a reason — the customer will see this on their screen.</p>
+      <input type="hidden" id="rejectOrderId" />
+      <textarea id="rejectReason" class="neon-input" placeholder="e.g. Item out of stock, closing soon..." rows="3" style="width:100%; resize:vertical; padding:12px; margin-bottom:14px; font-family:inherit;"></textarea>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-primary" style="flex:1; background:var(--secondary);" onclick="confirmRejectOrder()">REJECT ORDER ❌</button>
+        <button class="btn-primary" style="flex:1; background:rgba(255,255,255,0.1);" onclick="closeRejectModal()">CANCEL</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>

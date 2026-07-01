@@ -38,12 +38,12 @@ function getYearMonth() {
 }
 
 const defaultMenu = [
-  { id: 'v1', name: 'Veg Burger', emoji: '🍔', price: 100, category: 'veg', available: true },
-  { id: 'v2', name: 'Veg Wrap', emoji: '🌯', price: 90, category: 'veg', available: true },
-  { id: 'v3', name: 'Loaded Fries', emoji: '🍟', price: 80, category: 'veg', available: true },
-  { id: 'n1', name: 'Chicken Burger', emoji: '🍔', price: 140, category: 'nonveg', available: true },
-  { id: 'n2', name: 'Chicken Wrap', emoji: '🌯', price: 130, category: 'nonveg', available: true },
-  { id: 'n3', name: 'Chicken Fries', emoji: '🍗', price: 120, category: 'nonveg', available: true }
+  { id: 'v1', name: 'Veg Burger', emoji: '🍔', price: 100, category: 'veg', subCategory: 'Burgers 🍔', available: true },
+  { id: 'v2', name: 'Veg Wrap', emoji: '🌯', price: 90, category: 'veg', subCategory: 'Wraps 🌯', available: true },
+  { id: 'v3', name: 'Loaded Fries', emoji: '🍟', price: 80, category: 'veg', subCategory: 'Fries 🍟', available: true },
+  { id: 'n1', name: 'Chicken Burger', emoji: '🍔', price: 140, category: 'nonveg', subCategory: 'Burgers 🍔', available: true },
+  { id: 'n2', name: 'Chicken Wrap', emoji: '🌯', price: 130, category: 'nonveg', subCategory: 'Wraps 🌯', available: true },
+  { id: 'n3', name: 'Chicken Fries', emoji: '🍗', price: 120, category: 'nonveg', subCategory: 'Fries 🍟', available: true }
 ];
 
 async function initDB() {
@@ -56,11 +56,13 @@ async function initDB() {
   }
   try {
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS menu (id VARCHAR(50) PRIMARY KEY, name VARCHAR(100), emoji VARCHAR(10), price INTEGER, category VARCHAR(50), available BOOLEAN);
+      CREATE TABLE IF NOT EXISTS menu (id VARCHAR(50) PRIMARY KEY, name VARCHAR(100), emoji VARCHAR(10), price INTEGER, category VARCHAR(50), available BOOLEAN, sub_category VARCHAR(100));
       CREATE TABLE IF NOT EXISTS orders (id VARCHAR(50) PRIMARY KEY, customer_name VARCHAR(100), items JSONB, total INTEGER, payment_method VARCHAR(50), status VARCHAR(50), date VARCHAR(20), timestamp BIGINT, wait_time INTEGER);
       CREATE TABLE IF NOT EXISTS settings (key VARCHAR(50) PRIMARY KEY, value JSONB);
       CREATE TABLE IF NOT EXISTS counters (key VARCHAR(50) PRIMARY KEY, value TEXT DEFAULT '0');
     `);
+    await pool.query('ALTER TABLE menu ADD COLUMN IF NOT EXISTS sub_category VARCHAR(100)').catch(() => {});
+    await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS reject_reason TEXT').catch(() => {});
     // Initialize order counter from DB
     await pool.query("INSERT INTO counters (key, value) VALUES ('order_seq', '0') ON CONFLICT (key) DO NOTHING");
     await pool.query("INSERT INTO counters (key, value) VALUES ('order_month', $1) ON CONFLICT (key) DO NOTHING", [getYearMonth()]);
@@ -82,7 +84,7 @@ async function initDB() {
     const res = await pool.query('SELECT count(*) FROM menu');
     if (parseInt(res.rows[0].count) === 0) {
       for (const item of defaultMenu) {
-        await pool.query('INSERT INTO menu (id, name, emoji, price, category, available) VALUES ($1, $2, $3, $4, $5, $6)', [item.id, item.name, item.emoji, item.price, item.category, item.available]);
+        await pool.query('INSERT INTO menu (id, name, emoji, price, category, available, sub_category) VALUES ($1, $2, $3, $4, $5, $6, $7)', [item.id, item.name, item.emoji, item.price, item.category, item.available, item.subCategory || '']);
       }
     }
     console.log(`Database initialized. Order counter: ${orderCounter} (Month: ${orderCounterMonth})`);
@@ -115,6 +117,18 @@ app.get('/api/menu', async (req, res) => {
     const result = await pool.query('SELECT * FROM menu');
     res.json(result.rows);
   } catch (err) { res.status(500).json([]); }
+});
+
+app.get('/api/order/:id', async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    const o = localOrders.find(x => x.id === req.params.id);
+    return o ? res.json(o) : res.status(404).json({ error: "Not found" });
+  }
+  try {
+    const result = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
+    if (result.rows.length > 0) res.json(result.rows[0]);
+    else res.status(404).json({ error: "Not found" });
+  } catch (err) { res.status(500).json({}); }
 });
 
 app.get('/api/orders', requireAuth, async (req, res) => {
@@ -176,17 +190,21 @@ io.on('connection', (socket) => {
     io.emit('order_added', order);
   });
 
-  socket.on('update_order_status', async ({ orderId, status, waitTime }) => {
+  socket.on('update_order_status', async ({ orderId, status, waitTime, reason }) => {
     if (!checkAdminSocket(socket)) return;
     if (process.env.DATABASE_URL) {
       try {
-        await pool.query('UPDATE orders SET status = $1, wait_time = $2 WHERE id = $3', [status, waitTime || 0, orderId]);
+        if (reason) {
+          await pool.query('UPDATE orders SET status = $1, wait_time = $2, reject_reason = $3 WHERE id = $4', [status, waitTime || 0, reason, orderId]);
+        } else {
+          await pool.query('UPDATE orders SET status = $1, wait_time = $2 WHERE id = $3', [status, waitTime || 0, orderId]);
+        }
       } catch (err) { console.error("Error updating order:", err); }
     } else {
       const o = localOrders.find(x => x.id === orderId);
-      if (o) { o.status = status; if (waitTime !== undefined) o.waitTime = waitTime; }
+      if (o) { o.status = status; if (waitTime !== undefined) o.waitTime = waitTime; if (reason) o.rejectReason = reason; }
     }
-    io.emit('order_updated', { orderId, status, waitTime });
+    io.emit('order_updated', { orderId, status, waitTime, reason });
   });
 
   socket.on('update_order_items', async ({ orderId, items }) => {
@@ -219,8 +237,8 @@ io.on('connection', (socket) => {
     if (!checkAdminSocket(socket)) return;
     if (process.env.DATABASE_URL) {
       try {
-        await pool.query('INSERT INTO menu (id, name, emoji, price, category, available) VALUES ($1, $2, $3, $4, $5, $6)',
-          [item.id, item.name, item.emoji, item.price, item.category, item.available]);
+        await pool.query('INSERT INTO menu (id, name, emoji, price, category, available, sub_category) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [item.id, item.name, item.emoji, item.price, item.category, item.available, item.subCategory || '']);
       } catch (err) { console.error("Error adding menu item:", err); }
     } else {
       localMenu.push(item);

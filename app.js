@@ -17,7 +17,7 @@ socket.on("connect", () => {
   console.log("Socket connected/reconnected");
   if (isAdminLoggedIn) {
     const urlParams = new URLSearchParams(window.location.search);
-    const isCustomerUrl = urlParams.get('customer') === '1';
+    const isCustomerUrl = urlParams.get('admin') !== '1';
     fetchInitialData(isCustomerUrl);
   }
 });
@@ -60,6 +60,26 @@ function _keepAudioContextAlive() {
 }
 // Ping every 20 seconds to prevent AudioContext suspension
 setInterval(_keepAudioContextAlive, 20000);
+
+/** Show the one-time sound unlock banner */
+function _showSoundUnlockBanner() {
+  // Only show if AudioContext is not yet unlocked
+  const banner = document.getElementById('soundUnlockBanner');
+  if (!banner) return;
+  if (_audioCtx && _audioCtx.state === 'running') {
+    banner.style.display = 'none'; // Already unlocked
+  } else {
+    banner.style.display = 'block';
+  }
+}
+
+/** Called when admin taps the banner — unlocks audio and hides banner */
+function unlockAudioAndHide() {
+  _getAudioCtx(); // This user gesture unlocks the AudioContext
+  const banner = document.getElementById('soundUnlockBanner');
+  if (banner) banner.style.display = 'none';
+  showToast('🔔 Sound alerts enabled!', 'success');
+}
 
 /**
  * Plays an ascending 3-note chime (E5 → G#5 → B5) for new QR orders.
@@ -253,7 +273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Start UI
   const urlParams = new URLSearchParams(window.location.search);
-  const isCustomerUrl = urlParams.get('customer') === '1';
+  const isCustomerUrl = urlParams.get('admin') !== '1';
 
   if (isCustomerUrl) {
     showView('viewName');
@@ -283,8 +303,9 @@ function normalizeOrder(o) {
     paymentMethod: o.payment_method ?? o.paymentMethod ?? 'cash',
     status:        o.status         ?? 'pending',
     date:          o.date           ?? '',
-    timestamp:     o.timestamp      ?? Date.now(),
+    timestamp:     Number(o.timestamp) || Date.now(),
     waitTime:      o.wait_time      ?? o.waitTime ?? 0,
+    rejectReason:  o.reject_reason  ?? o.rejectReason ?? ''
   };
 }
 
@@ -293,6 +314,48 @@ async function fetchInitialData(isCustomerUrl) {
     if (isCustomerUrl) {
       const menuRes = await fetch('/api/menu');
       if (menuRes.ok) APP_DATA.menu = await menuRes.json();
+      
+      const savedOrderId = localStorage.getItem('r54_current_order_id');
+      if (savedOrderId) {
+        try {
+          const ordRes = await fetch(`/api/order/${savedOrderId}`);
+          if (ordRes.ok) {
+            const o = await ordRes.json();
+            const order = normalizeOrder(o);
+            
+            if (order.date === getTodayStr()) {
+              currentOrderId = order.id;
+              customerName = order.customerName;
+              
+              document.getElementById('confirmOrderId').textContent = '#' + order.id;
+              document.getElementById('confirmName').textContent = order.customerName;
+              
+              let payText = '❓ TBD';
+              if (order.paymentMethod === 'cash') payText = '💵 Cash';
+              else if (order.paymentMethod === 'upi') payText = '📱 UPI';
+              else payText = '💳 Pay at Counter';
+              
+              document.getElementById('confirmPayment').textContent = payText;
+              document.getElementById('confirmTotal').textContent = formatCurrency(order.total);
+              
+              const cw = document.getElementById('confirmWait');
+              if (cw) {
+                cw.setAttribute('data-time', order.timestamp);
+                cw.textContent = '00:00';
+              }
+              
+              resetOrderStatusPipeline();
+              updateOrderStatusPipeline(order.status);
+              lockTabForOrderTracking();
+              showView('viewConfirm');
+              return; // Skip viewName because we restored tracking
+            } else {
+              localStorage.removeItem('r54_current_order_id');
+              localStorage.removeItem('r54_pending_order');
+            }
+          }
+        } catch (e) { console.error('Tracking fetch error:', e); }
+      }
     } else {
       const headers = { 'Authorization': localStorage.getItem('r54_admin_token') };
       const [menuRes, ordersRes, settingsRes] = await Promise.all([
@@ -338,10 +401,14 @@ socket.on('order_added', (order) => {
 
   // If this is the customer's own order coming back with the real server-assigned ID,
   // update currentOrderId and the confirmation display
-  if (currentOrderId === 'PENDING' && order.status === 'new') {
-    currentOrderId = order.id;
-    const confirmIdEl = document.getElementById('confirmOrderId');
-    if (confirmIdEl) confirmIdEl.textContent = '#' + order.id;
+  if (localStorage.getItem('r54_pending_order') === 'true' && order.status === 'new' && currentOrderId === 'PENDING') {
+    if (order.customerName === customerName) {
+      currentOrderId = order.id;
+      localStorage.setItem('r54_current_order_id', order.id);
+      localStorage.removeItem('r54_pending_order');
+      const confirmIdEl = document.getElementById('confirmOrderId');
+      if (confirmIdEl) confirmIdEl.textContent = '#' + order.id;
+    }
   }
 
   if (isAdminLoggedIn) {
@@ -354,12 +421,34 @@ socket.on('order_added', (order) => {
   }
 });
 
-socket.on('order_updated', ({ orderId, status, waitTime }) => {
-  const o = APP_DATA.orders.find(x => x.id === orderId);
-  if (o) { o.status = status; if (waitTime !== undefined) o.waitTime = waitTime; }
-  if (isAdminLoggedIn) renderOrders();
-  // Update customer pipeline if this is the customer's order
-  if (orderId === currentOrderId) updateOrderStatusPipeline(status);
+socket.on('order_updated', (data) => {
+  const o = APP_DATA.orders.find(x => x.id === data.orderId);
+  if (o) {
+    o.status = data.status;
+    if (data.waitTime !== undefined) o.waitTime = data.waitTime;
+    if (data.reason !== undefined) o.rejectReason = data.reason;
+    if (isAdminLoggedIn) renderOrders();
+  }
+  
+  if (data.orderId === currentOrderId) {
+    if (data.status === 'pending') {
+      const cw = document.getElementById('confirmWait');
+      if (cw) {
+        cw.textContent = formatWaitTime(data.waitTime || 0);
+        cw.classList.remove('live-timer-display');
+        cw.removeAttribute('data-time');
+      }
+    }
+    updateOrderStatusPipeline(data.status, data.reason);
+    
+    // Notifications for customer
+    if (data.status === 'closed') {
+      playOrderReadyVoice(data.orderId);
+      fireLocalNotification('Your Order is Ready! 🎉', 'Please collect your food from the counter.');
+    } else if (data.status === 'rejected') {
+      fireLocalNotification('Order Rejected ❌', data.reason || 'Your order was rejected.');
+    }
+  }
 });
 
 socket.on('order_items_updated', ({ orderId, items }) => {
@@ -397,22 +486,34 @@ function showView(viewId) {
   });
   window.scrollTo?.(0, 0);
 
+  if (viewId === 'viewName') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isCustomerUrl = urlParams.get('admin') !== '1';
+    const backBtn = document.getElementById('btnNameBack');
+    if (backBtn) backBtn.style.display = isCustomerUrl ? 'none' : 'block';
+    const homeBtn = document.getElementById('btnNameHome');
+    if (homeBtn) homeBtn.style.display = isCustomerUrl ? 'none' : 'block';
+  }
+
+  if (viewId === 'viewMenu') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isCustomerUrl = urlParams.get('admin') !== '1';
+    const homeBtn = document.getElementById('btnMenuHome');
+    if (homeBtn) homeBtn.style.display = isCustomerUrl ? 'none' : 'block';
+  }
+
   if (viewId === 'viewCheckout') {
     const urlParams = new URLSearchParams(window.location.search);
-    const isCustomerUrl = urlParams.get('customer') === '1';
+    const isCustomerUrl = urlParams.get('admin') !== '1';
     
     const pc = document.getElementById('paymentCard');
     if (pc) pc.style.display = isCustomerUrl ? 'none' : 'block';
     
     const btn = document.getElementById('btnPlaceOrder');
     if (isCustomerUrl && btn) btn.disabled = false;
-  }
-  
-  if (viewId === 'viewName') {
-    const urlParams = new URLSearchParams(window.location.search);
-    const isCustomerUrl = urlParams.get('customer') === '1';
-    const backBtn = document.getElementById('btnNameBack');
-    if (backBtn) backBtn.style.display = isCustomerUrl ? 'none' : 'block';
+
+    const homeBtn = document.getElementById('btnCheckoutHome');
+    if (homeBtn) homeBtn.style.display = isCustomerUrl ? 'none' : 'block';
   }
 
   if (viewId === 'viewAdmin') {
@@ -458,9 +559,11 @@ function newOrder() {
   cart = {};
   selectedPayment = null;
   document.getElementById('customerName').value = '';
+  localStorage.removeItem('r54_current_order_id');
+  localStorage.removeItem('r54_pending_order');
   
   const urlParams = new URLSearchParams(window.location.search);
-  const isCustomerUrl = urlParams.get('customer') === '1';
+  const isCustomerUrl = urlParams.get('admin') !== '1';
 
   if (isCustomerUrl) {
     showView('viewName');
@@ -470,34 +573,87 @@ function newOrder() {
   updateCartBar();
 }
 
+function getSubCategory(name) {
+  name = name.toLowerCase();
+  if (name.includes('burger')) return 'Burgers 🍔';
+  if (name.includes('wrap')) return 'Wraps 🌯';
+  if (name.includes('fries') || name.includes('fry')) return 'Fries 🍟';
+  if (name.includes('chicken')) return 'Fried Chicken 🍗';
+  if (name.includes('bbq') || name.includes('barbeque')) return 'BBQ 🍖';
+  if (name.includes('chips') || name.includes('potato')) return 'Chips 🥔';
+  if (name.includes('pizza')) return 'Pizza 🍕';
+  if (name.includes('taco')) return 'Tacos 🌮';
+  if (name.includes('salad')) return 'Salads 🥗';
+  if (name.includes('dessert') || name.includes('ice cream')) return 'Desserts 🍨';
+  if (name.includes('drink') || name.includes('cola') || name.includes('shake')) return 'Drinks 🥤';
+  return 'Others 🍽️';
+}
+
+function filterMenu() {
+  renderMenu('veg');
+  renderMenu('nonveg');
+}
+
+function toggleMenuSection(id) {
+  const el = document.getElementById(id);
+  const icon = document.getElementById('icon-' + id);
+  if (el.style.display === 'none') {
+    el.style.display = 'grid';
+    if (icon) icon.textContent = '▼';
+  } else {
+    el.style.display = 'none';
+    if (icon) icon.textContent = '▶';
+  }
+}
+
 function renderMenu(category) {
-  const menu   = APP_DATA.menu.filter(i => i.category === category);
+  const query = (document.getElementById('menuSearch')?.value || '').toLowerCase();
+  const menu   = APP_DATA.menu.filter(i => i.category === category && i.name.toLowerCase().includes(query));
   const gridId = category === 'veg' ? 'menuVeg' : 'menuNonveg';
   const grid   = document.getElementById(gridId);
   if (!grid) return;
 
   if (menu.length === 0) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="empty-icon">😢</span><p>No items in this category</p></div>`;
+    grid.innerHTML = `<div class="empty-state" style="width: 100%;"><span class="empty-icon">😢</span><p>No items found</p></div>`;
     return;
   }
 
-  grid.innerHTML = menu.map(item => {
-    const qty = cart[item.id]?.qty || 0;
+  const grouped = {};
+  menu.forEach(item => {
+    const sub = item.subCategory || getSubCategory(item.name);
+    if (!grouped[sub]) grouped[sub] = [];
+    grouped[sub].push(item);
+  });
+
+  grid.innerHTML = Object.keys(grouped).map(sub => {
+    const subId = `section-${category}-${sub.replace(/[^a-zA-Z]/g, '')}`;
     return `
-    <article class="menu-item-card ${!item.available ? 'unavailable' : ''}" id="card-${item.id}">
-      <div class="menu-item-emoji">${item.emoji}</div>
-      <div class="menu-item-name">${item.name}</div>
-      <div class="menu-item-price">₹${item.price}</div>
-      ${!item.available ? '<span class="item-unavailable-tag">UNAVAILABLE</span>' : ''}
-      <div class="qty-controls">
-        <button class="qty-btn" onclick="changeQty('${item.id}',-1)" aria-label="Remove">−</button>
-        <span class="qty-display" id="qtyDisplay-${item.id}">${qty}</span>
-        <button class="qty-btn" onclick="changeQty('${item.id}',1)"  aria-label="Add">+</button>
-      </div>
-      <button class="add-to-cart-btn" onclick="addToCart('${item.id}')" ${!item.available ? 'disabled' : ''}>
-        ${qty > 0 ? 'IN CART ✓' : 'ADD TO ORDER'}
+    <div class="menu-section" style="width:100%; margin-bottom: 16px;">
+      <button class="menu-section-header" onclick="toggleMenuSection('${subId}')" style="width:100%; display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); padding:12px 16px; border-radius:8px; color:white; font-family:var(--font-display); font-size:20px; cursor:pointer; margin-bottom: 12px;">
+        <span>${sub}</span>
+        <span id="icon-${subId}">▼</span>
       </button>
-    </article>`;
+      <div id="${subId}" class="menu-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:12px;">
+        ${grouped[sub].map(item => {
+          const qty = cart[item.id]?.qty || 0;
+          return `
+          <article class="menu-item-card ${!item.available ? 'unavailable' : ''}" id="card-${item.id}">
+            <div class="menu-item-emoji">${item.emoji}</div>
+            <div class="menu-item-name">${item.name}</div>
+            <div class="menu-item-price">₹${item.price}</div>
+            ${!item.available ? '<span class="item-unavailable-tag">UNAVAILABLE</span>' : ''}
+            <div class="qty-controls">
+              <button class="qty-btn" onclick="changeQty('${item.id}',-1)" aria-label="Remove">−</button>
+              <span class="qty-display" id="qtyDisplay-${item.id}">${qty}</span>
+              <button class="qty-btn" onclick="changeQty('${item.id}',1)"  aria-label="Add">+</button>
+            </div>
+            <button class="add-to-cart-btn" onclick="addToCart('${item.id}')" ${!item.available ? 'disabled' : ''}>
+              ${qty > 0 ? 'IN CART ✓' : 'ADD TO ORDER'}
+            </button>
+          </article>`;
+        }).join('')}
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -613,7 +769,7 @@ function selectPayment(type) {
 
 function placeOrder() {
   const urlParams = new URLSearchParams(window.location.search);
-  const isCustomerUrl = urlParams.get('customer') === '1';
+  const isCustomerUrl = urlParams.get('admin') !== '1';
 
   if (isCustomerUrl) {
     if (Object.keys(cart).length === 0) { showToast('Cart is empty!', 'error'); return; }
@@ -679,10 +835,20 @@ function createOrder(paymentMethod) {
   // Emit over socket
   socket.emit('new_order', order);
   
-  // NOTE: Optimistic UI update removed to prevent duplicate orders
-  // socket listener 'order_added' will handle adding it locally
+  const urlParams = new URLSearchParams(window.location.search);
+  const isCustomerUrl = urlParams.get('admin') !== '1';
+  
+  if (!isCustomerUrl && isAdminLoggedIn) {
+    showToast('Order created!', 'success');
+    showView('viewAdmin');
+    cart = {};
+    updateCartBar();
+    return;
+  }
 
   currentOrderId = 'PENDING';  // Server will replace with real sequential ID
+  localStorage.setItem('r54_pending_order', 'true');
+  
   // Lock tab so customer can't accidentally close while tracking order
   lockTabForOrderTracking();
   document.getElementById('confirmOrderId').textContent  = '...';  // Updated when server responds
@@ -722,14 +888,16 @@ function resetOrderStatusPipeline() {
     if (el) el.classList.remove('pipeline-line--active');
   });
   const titleEl = document.getElementById('confirmTitle');
-  if (titleEl) titleEl.textContent = 'ORDER PLACED!';
+  if (titleEl) { titleEl.textContent = 'ORDER PLACED!'; titleEl.style.color = ''; }
   const subEl = document.getElementById('confirmSub');
   if (subEl) subEl.textContent = 'We have received your order 🔥';
   const iconEl = document.getElementById('confirmIcon');
   if (iconEl) iconEl.textContent = '✅';
+  const animEl = document.getElementById('confirmAnim');
+  if (animEl) animEl.style.borderColor = '';
 }
 
-function updateOrderStatusPipeline(status) {
+function updateOrderStatusPipeline(status, reason = '') {
   if (status === 'pending') {
     // Admin verified → Cooking
     const approveEl = document.getElementById('pipeDotApprove');
@@ -765,6 +933,16 @@ function updateOrderStatusPipeline(status) {
     showToast('🎉 Your order is READY! Please collect!', 'success', true);
     // Order is complete — safe to release the tab lock
     unlockTab();
+  } else if (status === 'rejected') {
+    const titleEl = document.getElementById('confirmTitle');
+    if (titleEl) { titleEl.textContent = 'ORDER REJECTED ❌'; titleEl.style.color = 'var(--secondary)'; }
+    const subEl = document.getElementById('confirmSub');
+    if (subEl) subEl.textContent = reason ? `Reason: ${reason}` : 'Your order was rejected.';
+    const iconEl = document.getElementById('confirmIcon');
+    if (iconEl) iconEl.textContent = '❌';
+    const animEl = document.getElementById('confirmAnim');
+    if (animEl) animEl.style.borderColor = 'var(--secondary)';
+    showToast('Your order was rejected ❌', 'error');
   }
 }
 
@@ -834,6 +1012,8 @@ async function adminLogin() {
       showView('viewAdmin');
       showAdminTab('active');
       showToast('Welcome back! 🔥', 'success');
+      // Show sound unlock banner so admin can tap once to enable audio
+      _showSoundUnlockBanner();
     } else {
       errorEl.textContent = data.error || 'Incorrect Password';
       errorEl.classList.remove('hidden');
@@ -895,7 +1075,7 @@ function renderOrders() {
 
   // Closed: most recent first
   const closed = APP_DATA.orders
-    .filter(o => o.status === 'closed')
+    .filter(o => o.status === 'closed' || o.status === 'rejected')
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 50);
 
@@ -941,10 +1121,21 @@ function buildOrderHtml(order, isClosed) {
   let actions = '';
   let statusBadge = '';
   if (isClosed) {
-    statusBadge = `<span class="badge badge--done">✅ DONE</span>`;
+    if (order.status === 'rejected') {
+      statusBadge = `<span class="badge" style="background:var(--secondary)">❌ REJECTED</span>`;
+      if (order.rejectReason) {
+        actions = `<div style="color:var(--secondary); font-size:12px; margin-top:8px;">Reason: ${escHtml(order.rejectReason)}</div>`;
+      }
+    } else {
+      statusBadge = `<span class="badge badge--done">✅ DONE</span>`;
+    }
   } else if (order.status === 'new') {
     statusBadge = `<span class="badge badge--new">⚠️ NEW</span>`;
-    actions = `<button class="btn-primary btn-sm" onclick="verifyOrder('${order.id}')" style="background:var(--secondary)">VERIFY & COOK</button>`;
+    actions = `
+      <div style="display:flex; gap:8px;">
+        <button class="btn-primary btn-sm" onclick="openRejectModal('${order.id}')" style="background:rgba(255,255,255,0.1)">REJECT ❌</button>
+        <button class="btn-primary btn-sm" onclick="verifyOrder('${order.id}')" style="background:var(--secondary)">VERIFY & COOK</button>
+      </div>`;
   } else {
     statusBadge = `<span class="badge badge--pending">⏳ COOKING</span>`;
     actions = `<button class="btn-primary btn-sm" onclick="closeOrder('${order.id}')">✅ DONE</button>`;
@@ -1024,7 +1215,47 @@ function closeOrder(orderId) {
   o.status = 'closed';
   o.waitTime = waitTime;
   
+  playOrderReadyVoice(orderId);
+  playDingSound();
+  
   showToast('Order closed! ✅ Check Closed tab', 'success');
+  renderOrders();
+}
+
+// ============================================================
+// ADMIN: REJECT ORDER MODAL
+// ============================================================
+function openRejectModal(orderId) {
+  document.getElementById('rejectOrderId').value = orderId;
+  document.getElementById('rejectReason').value = '';
+  document.getElementById('rejectModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => document.getElementById('rejectReason').focus(), 100);
+}
+
+function closeRejectModal() {
+  document.getElementById('rejectModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+function confirmRejectOrder() {
+  const orderId = document.getElementById('rejectOrderId').value;
+  const reason  = document.getElementById('rejectReason').value.trim();
+
+  if (!orderId) { closeRejectModal(); return; }
+  if (!reason) {
+    showToast('Please enter a reason for rejection.', 'error');
+    document.getElementById('rejectReason').focus();
+    return;
+  }
+
+  socket.emit('update_order_status', { orderId, status: 'rejected', reason });
+
+  const o = APP_DATA.orders.find(x => x.id === orderId);
+  if (o) { o.status = 'rejected'; o.rejectReason = reason; }
+
+  closeRejectModal();
+  showToast(`Order #${orderId} rejected.`, 'error');
   renderOrders();
 }
 
@@ -1082,11 +1313,12 @@ function addMenuItem() {
   const priceStr = document.getElementById('newItemPrice').value.trim();
   const emoji    = document.getElementById('newItemEmoji').value.trim() || '🍽️';
   const category = document.getElementById('newItemCategory').value;
+  const subCategory = document.getElementById('newItemSubCategory').value;
 
   if (!name)  { showToast('Enter item name', 'error'); return; }
   if (!priceStr || isNaN(+priceStr) || +priceStr <= 0) { showToast('Enter valid price', 'error'); return; }
 
-  const item = { id: `c_${Date.now()}`, name, emoji, price: +priceStr, category, available: true };
+  const item = { id: `c_${Date.now()}`, name, emoji, price: +priceStr, category, subCategory, available: true };
   socket.emit('add_menu_item', item);
 
   document.getElementById('newItemName').value  = '';
@@ -1119,12 +1351,22 @@ function generateReport() {
   const orders = APP_DATA.orders.filter(o => normDate(o) === dateStr && o.status === 'closed');
 
   const revenue  = orders.reduce((s, o) => s + Number(o.total), 0);
-  const vegCount = orders.filter(o => o.items.some(i => APP_DATA.menu.find(m => m.id === i.id)?.category === 'veg')).length;
+  let vegCount = 0;
+  let nonvegCount = 0;
+  orders.forEach(o => {
+    o.items.forEach(i => {
+      const m = APP_DATA.menu.find(x => x.id === i.id);
+      if (m && m.category === 'veg') vegCount += i.qty;
+      else if (m && m.category === 'nonveg') nonvegCount += i.qty;
+    });
+  });
+
+  const totalItems = vegCount + nonvegCount;
 
   document.getElementById('rTotalOrders').textContent  = orders.length;
   document.getElementById('rRevenue').textContent      = formatCurrency(revenue);
   document.getElementById('rVegOrders').textContent    = vegCount;
-  document.getElementById('rNonvegOrders').textContent = orders.length - vegCount;
+  document.getElementById('rNonvegOrders').textContent = nonvegCount;
 
   // Top items
   const itemCounts = {};
@@ -1320,3 +1562,151 @@ function escHtml(str) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+
+// ============================================================
+// VOICE & NOTIFICATIONS
+// ============================================================
+function playVoiceNotification(text) {
+  if ('speechSynthesis' in window) {
+    try {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.volume = 1;
+      utterance.rate = 1.15; // Brisk pace
+      utterance.pitch = 1.2; // Slightly higher pitch for active tone
+      
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        // Look for energetic voices like Samantha, Victoria, or Google US English
+        const activeNames = ['samantha', 'victoria', 'google us english', 'alex'];
+        const activeVoice = voices.find(v => v.lang.startsWith('en') && activeNames.some(name => v.name.toLowerCase().includes(name)));
+        if (activeVoice) utterance.voice = activeVoice;
+      }
+      
+      window._activeUtterance = utterance;
+      window.speechSynthesis.speak(utterance);
+    } catch(err) {
+      console.error("Speech Synthesis Error:", err);
+    }
+  }
+}
+
+function playOrderReadyVoice(orderId) {
+  if ('speechSynthesis' in window) {
+    try {
+      const getActiveVoice = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          const activeNames = ['samantha', 'victoria', 'google us english', 'alex'];
+          return voices.find(v => v.lang.startsWith('en') && activeNames.some(name => v.name.toLowerCase().includes(name)));
+        }
+        return null;
+      };
+
+      const createUtterance = (text) => {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-US';
+        u.volume = 1.0;
+        u.rate = 1.15; // Brisk, active pace
+        u.pitch = 1.2; // Active tone
+        const voice = getActiveVoice();
+        if (voice) u.voice = voice;
+        return u;
+      };
+
+      const u1 = createUtterance("Order number");
+      const u2 = createUtterance(String(orderId));
+      const u3 = createUtterance("is ready!");
+
+      // Store globally to prevent garbage collection on Safari
+      window._activeU1 = u1;
+      window._activeU2 = u2;
+      window._activeU3 = u3;
+
+      u1.onend = () => {
+        setTimeout(() => window.speechSynthesis.speak(u2), 500);
+      };
+      
+      u2.onend = () => {
+        setTimeout(() => window.speechSynthesis.speak(u3), 500);
+      };
+
+      window.speechSynthesis.speak(u1);
+    } catch(err) {
+      console.error("Speech Synthesis Error:", err);
+    }
+  }
+}
+
+function playDingSound() {
+  try {
+    // Short, simple beep sound in base64
+    const audio = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"+Array(100).join("A"));
+    // Since base64 string for a real ding is too long to hardcode easily, 
+    // let's use the Web Audio API for a guaranteed beep that requires no external assets:
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 1);
+    osc.stop(ctx.currentTime + 1);
+  } catch(e) {}
+}
+
+function enablePushNotifications() {
+  const btn = document.getElementById('btnEnableNotifications');
+  if (btn) btn.style.display = 'none';
+
+  if (!window.isSecureContext) {
+    alert("NOTICE: Native Push Notifications require a secure HTTPS connection. Since you are running locally on HTTP, native push is disabled. However, in-app sounds and alerts will still work!");
+    return;
+  }
+  if (!('Notification' in window)) {
+    alert("Notifications are not supported in this browser.");
+    return;
+  }
+  try {
+    Notification.requestPermission().then(permission => {
+      if (permission === 'granted') {
+        showToast('Notifications enabled! 🎉', 'success');
+      } else {
+        alert('Notification permission denied by browser.');
+      }
+    }).catch(err => {
+      alert('Push Error: ' + err.message);
+    });
+  } catch (err) {
+    alert('Push Error: ' + err.message);
+  }
+}
+
+function fireLocalNotification(title, body) {
+  // Always play a sound for in-app awareness
+  playDingSound();
+  
+  // Try native push if permitted
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body, icon: 'logo-app.png' });
+  } else {
+    // Fallback: Persistent loud UI alert if they don't have native push
+    showToast(title + " - " + body, 'success', true);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const btn = document.getElementById('btnEnableNotifications');
+    if (btn) btn.style.display = 'none';
+  }
+  
+  // Pre-load speech synthesis voices to prevent inconsistent voice bug
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }
+});
