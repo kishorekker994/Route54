@@ -22,6 +22,170 @@ socket.on("connect", () => {
   }
 });
 
+// ============================================================
+// NOTIFICATION SOUND (Web Audio API — no file needed)
+// ============================================================
+let _audioCtx = null;
+
+function _getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+
+// Unlock AudioContext on first user interaction (browser autoplay policy)
+document.addEventListener('click',      () => _getAudioCtx(), { once: true });
+document.addEventListener('touchstart', () => _getAudioCtx(), { once: true });
+
+/**
+ * Plays an ascending 3-note chime (E5 → G#5 → B5) for new QR orders.
+/**
+ * Plays a LOUD ascending 3-note chime that repeats for ~5 seconds.
+ * E5 → G#5 → B5 (major triad), looped 5× with short pauses.
+ */
+function playOrderAlert() {
+  try {
+    const ctx  = _getAudioCtx();
+    const now  = ctx.currentTime;
+
+    const notes      = [659.25, 830.61, 987.77]; // E5, G#5, B5
+    const noteDur    = 0.25;   // each note length
+    const noteGap    = 0.08;   // gap between notes in one chime
+    const chimeDur   = notes.length * (noteDur + noteGap); // ~0.99s per chime
+    const pauseAfter = 0.55;   // rest between repeats
+    const repeats    = 5;      // ~5 × (0.99 + 0.55) ≈ 7.7s — stops at 5s via stopTime
+    const stopTime   = now + 5.0; // hard cut-off at 5 seconds
+
+    // Master volume — loud but not distorted
+    const masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(0.85, now);
+    masterGain.connect(ctx.destination);
+
+    for (let rep = 0; rep < repeats; rep++) {
+      const repOffset = now + rep * (chimeDur + pauseAfter);
+      if (repOffset >= stopTime) break; // don't schedule past 5s
+
+      notes.forEach((freq, i) => {
+        const t = repOffset + i * (noteDur + noteGap);
+        if (t >= stopTime) return;
+
+        // Primary sine tone
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t);
+
+        // Triangle wave adds presence without harshness
+        const osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(freq, t);
+
+        // Harmonic octave (sine, softer)
+        const osc3 = ctx.createOscillator();
+        osc3.type = 'sine';
+        osc3.frequency.setValueAtTime(freq * 2, t);
+
+        const g1 = ctx.createGain();
+        const g2 = ctx.createGain();
+        const g3 = ctx.createGain();
+
+        const end = Math.min(t + noteDur, stopTime);
+
+        // Fast attack, exponential decay
+        g1.gain.setValueAtTime(0, t);
+        g1.gain.linearRampToValueAtTime(0.70, t + 0.015);
+        g1.gain.exponentialRampToValueAtTime(0.001, end);
+
+        g2.gain.setValueAtTime(0, t);
+        g2.gain.linearRampToValueAtTime(0.35, t + 0.015);
+        g2.gain.exponentialRampToValueAtTime(0.001, end);
+
+        g3.gain.setValueAtTime(0, t);
+        g3.gain.linearRampToValueAtTime(0.20, t + 0.015);
+        g3.gain.exponentialRampToValueAtTime(0.001, end);
+
+        osc.connect(g1);  g1.connect(masterGain);
+        osc2.connect(g2); g2.connect(masterGain);
+        osc3.connect(g3); g3.connect(masterGain);
+
+        osc.start(t);  osc.stop(end + 0.02);
+        osc2.start(t); osc2.stop(end + 0.02);
+        osc3.start(t); osc3.stop(end + 0.02);
+      });
+    }
+  } catch (err) {
+    console.warn('playOrderAlert failed:', err);
+  }
+}
+
+// ============================================================
+// TAB-CLOSE GUARD (Customer order tracking — Desktop + Mobile)
+// ============================================================
+let _tabLocked = false;
+
+/** Desktop: show native browser dialog on close/refresh */
+function _handleBeforeUnload(e) {
+  e.preventDefault();
+  e.returnValue = 'Your order is being prepared! Leave this page and you may miss status updates.';
+  return e.returnValue;
+}
+
+/** Mobile: visibilitychange fires when user backgrounds/switches away.
+ *  When they come back (visible again), show the comeback overlay. */
+function _handleVisibilityChange() {
+  if (!_tabLocked) return;
+  if (document.visibilityState === 'visible') {
+    // User came back — show the in-app warning overlay
+    const overlay = document.getElementById('comebackOverlay');
+    if (overlay) overlay.style.display = 'flex';
+  }
+}
+
+/** Dismiss the comeback overlay */
+function dismissComebackOverlay() {
+  const overlay = document.getElementById('comebackOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+/** Show the persistent "stay on page" banner in the confirm view */
+function _showStayBanner() {
+  const banner = document.getElementById('stayBanner');
+  if (banner) banner.style.display = 'flex';
+}
+
+function _hideStayBanner() {
+  const banner = document.getElementById('stayBanner');
+  if (banner) banner.style.display = 'none';
+}
+
+/** Call once order is placed — activates both desktop + mobile guards */
+function lockTabForOrderTracking() {
+  if (!_tabLocked) {
+    // Desktop: native browser unload dialog
+    window.addEventListener('beforeunload', _handleBeforeUnload);
+    // Mobile: visibilitychange comeback overlay
+    document.addEventListener('visibilitychange', _handleVisibilityChange);
+    _tabLocked = true;
+    _showStayBanner();
+    console.log('[Route54] Tab locked — order tracking active.');
+  }
+}
+
+/** Call when order reaches final state (closed/ready) */
+function unlockTab() {
+  if (_tabLocked) {
+    window.removeEventListener('beforeunload', _handleBeforeUnload);
+    document.removeEventListener('visibilitychange', _handleVisibilityChange);
+    _tabLocked = false;
+    _hideStayBanner();
+    // Also dismiss comeback overlay if it was showing
+    dismissComebackOverlay();
+    console.log('[Route54] Tab unlocked — order complete.');
+  }
+}
+
+
 // ---- GLOBAL STATE ----
 let APP_DATA = {
   menu: [],
@@ -148,7 +312,11 @@ async function fetchInitialData(isCustomerUrl) {
 socket.on('order_added', (order) => {
   APP_DATA.orders.unshift(normalizeOrder(order));
   if (isAdminLoggedIn) {
-    showToast(`New Order from ${order.customerName} (${order.id})!`, 'success', true);
+    // Play chime only for QR-placed orders (status 'new'), not admin-placed ones
+    if (order.status === 'new') {
+      playOrderAlert();
+    }
+    showToast(`🛎️ New Order from ${order.customerName}!`, 'success', true);
     renderOrders();
   }
 });
@@ -482,6 +650,8 @@ function createOrder(paymentMethod) {
   // socket listener 'order_added' will handle adding it locally
 
   currentOrderId = order.id;
+  // Lock tab so customer can't accidentally close while tracking order
+  lockTabForOrderTracking();
   document.getElementById('confirmOrderId').textContent  = order.id;
   document.getElementById('confirmName').textContent     = order.customerName;
   let payText = '❓ TBD';
@@ -559,6 +729,8 @@ function updateOrderStatusPipeline(status) {
     const iconEl = document.getElementById('confirmIcon');
     if (iconEl) iconEl.textContent = '🎉';
     showToast('🎉 Your order is READY! Please collect!', 'success', true);
+    // Order is complete — safe to release the tab lock
+    unlockTab();
   }
 }
 

@@ -238,8 +238,24 @@
       </div>
 
       <button class="btn-primary btn-xl" onclick="newOrder()">ORDER AGAIN 🍔</button>
+
+      <!-- Stay-on-page sticky banner (shown when order is active) -->
+      <div class="stay-banner" id="stayBanner" style="display:none">
+        <span>📡</span>
+        <span>Stay on this page to track your order live</span>
+      </div>
     </div>
   </div><!-- /view--confirm -->
+
+  <!-- Mobile comeback overlay (shown when user returns after leaving) -->
+  <div class="comeback-overlay" id="comebackOverlay" style="display:none">
+    <div class="comeback-card">
+      <div class="comeback-icon">⚠️</div>
+      <h2 class="comeback-title">Your Order is Still Active!</h2>
+      <p class="comeback-msg">You left the page while your order was being prepared.<br>Stay here to see your order status.</p>
+      <button class="btn-primary btn-xl" onclick="dismissComebackOverlay()">OK, I'll Stay 👍</button>
+    </div>
+  </div>
 
 
   <!-- ============================================================

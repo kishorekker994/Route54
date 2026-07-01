@@ -1319,3 +1319,79 @@ body {
   box-shadow: var(--glow-green);
 }
 
+
+/* ── STAY-ON-PAGE BANNER (mobile order tracking) ── */
+.stay-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(255,107,53,0.15), rgba(255,45,85,0.15));
+  border: 1px solid rgba(255,107,53,0.4);
+  border-radius: 50px;
+  padding: 10px 20px;
+  margin-top: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff8c60;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  animation: bannerPulse 2.5s ease-in-out infinite;
+  text-align: center;
+  justify-content: center;
+}
+@keyframes bannerPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,53,0); }
+  50%       { box-shadow: 0 0 0 6px rgba(255,107,53,0.15); }
+}
+
+/* ── MOBILE COMEBACK OVERLAY ── */
+.comeback-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: overlayIn 0.3s ease;
+}
+@keyframes overlayIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.comeback-card {
+  background: linear-gradient(160deg, #1a1a1a 0%, #0f0f0f 100%);
+  border: 1px solid rgba(255,107,53,0.5);
+  border-radius: 24px;
+  padding: 40px 32px;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(255,107,53,0.2), 0 20px 60px rgba(0,0,0,0.8);
+}
+.comeback-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+  animation: shakeWarning 0.5s ease 0.3s;
+}
+@keyframes shakeWarning {
+  0%, 100% { transform: rotate(0); }
+  25%       { transform: rotate(-10deg); }
+  75%       { transform: rotate(10deg); }
+}
+.comeback-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 0.05em;
+  color: #fff;
+  margin-bottom: 12px;
+}
+.comeback-msg {
+  color: rgba(255,255,255,0.6);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
